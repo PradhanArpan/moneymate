@@ -16,7 +16,8 @@ const C = {
 /* ── Categories & constants ──────────────────────────────────────── */
 const EXPENSE_CATS  = ["Food","Groceries","Transport","Rent","Utilities","Shopping","Health","Entertainment","EMI","Education","Other"];
 const INCOME_CATS   = ["Salary","Business","Interest","Gift","Other"];
-const ACCOUNT_TYPES = ["Bank","UPI / Wallet","Cash","Credit Card"];
+const ACCOUNT_TYPES = ["Bank","UPI / Wallet","Cash","Credit Card","Loan"];
+const LOAN_TYPES    = ["Car Loan","Home Loan","Personal Loan","Education Loan","Business Loan","Gold Loan","Other Loan"];
 const INVEST_TYPES  = ["Mutual Fund","Stocks","SGB","Bonds","FD","PPF","NPS","Other Investment"];
 const CAT_EMOJI     = { Food:"🍜",Groceries:"🛒",Transport:"🚗",Rent:"🏠",Utilities:"⚡",Shopping:"🛍️",Health:"💊",Entertainment:"🎬",EMI:"🏦",Education:"📚",Other:"📌",Salary:"💼",Business:"📈",Interest:"💰",Gift:"🎁",Transfer:"↔️" };
 
@@ -42,9 +43,18 @@ function evalExpr(s) {
 }
 
 /* ── Data model ──────────────────────────────────────────────────── */
-const EMPTY = { accounts:[], transactions:[], budgets:{}, goals:[], recurring:[], customCats:{expense:[],income:[]} };
+const DEFAULT_ACCOUNTS = [
+  { id:"acc-sib-0584", name:"South Indian Bank", type:"Bank", opening:0, hint:"0584" },
+  { id:"acc-hdf-9712", name:"HDFC Bank",         type:"Bank", opening:0, hint:"9712" },
+  { id:"acc-sbi-4034", name:"SBI – 4034",        type:"Bank", opening:0, hint:"4034" },
+  { id:"acc-sbi-5194", name:"SBI – 5194",        type:"Bank", opening:0, hint:"5194" },
+  { id:"acc-ktk-1924", name:"Kotak Bank",         type:"Bank", opening:0, hint:"1924" },
+  { id:"acc-sbi-loan1", name:"SBI Car Loan",      type:"Loan", loanType:"Car Loan", sanctionedAmount:780000, outstandingAmount:576797, opening:0, hint:"" },
+];
+const EMPTY = { accounts:DEFAULT_ACCOUNTS, transactions:[], budgets:{}, goals:[], recurring:[], customCats:{expense:[],income:[]} };
 const normalize = d => ({
   ...EMPTY, ...d,
+  accounts: d.accounts?.length > 0 ? d.accounts : DEFAULT_ACCOUNTS,
   recurring: d.recurring||[],
   customCats: {expense:[],income:[],...(d.customCats||{})},
   goals: (d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",investmentType:"Mutual Fund",investmentValue:0,...g})),
@@ -71,7 +81,7 @@ async function decryptData(stored,pin){
   return normalize(JSON.parse(DEC.decode(pt)));
 }
 
-/* ── Improved PDF Parser ─────────────────────────────────────────── */
+/* ── PDF Parser — SIB · HDFC · SBI · Kotak ─────────────────────── */
 const PDF_CDN="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
 const loadPdf=()=>new Promise((res,rej)=>{
   if(window.pdfjsLib)return res(window.pdfjsLib);
@@ -79,7 +89,6 @@ const loadPdf=()=>new Promise((res,rej)=>{
   s.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc=`${PDF_CDN}/pdf.worker.min.js`;res(window.pdfjsLib);};
   s.onerror=()=>rej(new Error("PDF reader failed"));document.head.appendChild(s);
 });
-
 async function extractLines(pdf){
   const lines=[];
   for(let p=1;p<=pdf.numPages;p++){
@@ -89,98 +98,154 @@ async function extractLines(pdf){
   }
   return lines;
 }
-
 const MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
-// Date anywhere in line, multiple formats
-const DATE_RE=/\b(\d{1,2})[\/\-.](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2})[\/\-.](\d{2,4})\b/i;
-const DATE_RE2=/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i;
-const AMT_RE=/(?:\d{1,3}(?:,\d{2,3})+|\d{2,})\.\d{2}/g;
+// DD/MM/YY, DD-MM-YY, DD.MM.YY, DD/Mon/YY
+const DATE_RE  =/\b(\d{1,2})[\/\-.]((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)|\d{1,2})[\/\-.](\d{2,4})\b/i;
+// DD Mon YYYY — Kotak format
+const DATE_RE2 =/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i;
+// Indian number format with decimal
+const AMT_RE   =/(?:\d{1,3}(?:,\d{2,3})+|\d{2,})\.\d{2}/g;
 
-const toISO=(d,m,y)=>{const mm=isNaN(+m)?MONTHS[m.toLowerCase().slice(0,3)]:+m;let yy=+y;if(String(y).length===2)yy+=2000;if(!mm||mm>12||+d>31)return null;return `${yy}-${String(mm).padStart(2,"0")}-${String(d).padStart(2,"0")}`;};
+const toISO=(d,m,y)=>{const mm=isNaN(+m)?MONTHS[m.toLowerCase().slice(0,3)]:+m;let yy=+y;if(String(y).length===2)yy+=2000;if(!mm||mm>12||+d>31||yy<2000)return null;return `${yy}-${String(mm).padStart(2,"0")}-${String(d).padStart(2,"0")}`;};
 
-const CAT_RULES=[[/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|hotel.*food/i,"Food"],[/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana|supermarket/i,"Groceries"],[/uber|ola|rapido|irctc|redbus|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],[/rent\b|landlord|pg\b/i,"Rent"],[/electricity|bescom|tneb|mseb|jio|airtel|vodafone|bsnl|broadband|dth|gas bill/i,"Utilities"],[/amazon|flipkart|myntra|ajio|nykaa|meesho|shopping|mall/i,"Shopping"],[/pharmacy|apollo|medplus|hospital|clinic|1mg|pharmeasy|doctor/i,"Health"],[/netflix|spotify|hotstar|bookmyshow|prime|pvr|inox|youtube premium/i,"Entertainment"],[/\bemi\b|loan|bajaj|lic premium/i,"EMI"],[/school|college|udemy|coursera|tuition|byjus|unacademy/i,"Education"]];
-const INC_RULES=[[/salary|sal cr|payroll|ctc/i,"Salary"],[/interest|int\.? cr|interest paid/i,"Interest"],[/dividend|div cr/i,"Interest"],[/refund|cashback|reversal|chargeback/i,"Other"],[/neft cr|imps cr|upi cr.*salary/i,"Salary"]];
-
+const CAT_RULES=[
+  [/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|thalassery|jalpan|foods\/pai|hotel.*food/i,"Food"],
+  [/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana|supermarket/i,"Groceries"],
+  [/uber|ola|rapido|irctc|redbus|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],
+  [/rent\b|landlord|pg\b/i,"Rent"],
+  [/electricity|bescom|tneb|mseb|jio|airtel|vodafone|broadband|dth|gas bill/i,"Utilities"],
+  [/amazon|flipkart|myntra|ajio|nykaa|meesho|myntra\/upi|shopping/i,"Shopping"],
+  [/pharmacy|apollo|medplus|hospital|clinic|1mg|pharmeasy/i,"Health"],
+  [/netflix|spotify|hotstar|bookmyshow|prime|pvr|inox/i,"Entertainment"],
+  [/\bemi\b|loan|bajaj|lic premium|sjvn|indianesign|indpay/i,"EMI"],
+  [/school|college|udemy|tuition|byjus/i,"Education"],
+  [/indstocks|iccl|zerodha|groww|upstox|nsdl.*demat/i,"Stocks"],
+];
+const INC_RULES=[
+  [/salary|sal cr|payroll/i,"Salary"],
+  [/interest credit|int paid|interest|int\.? cr/i,"Interest"],
+  [/dividend|div cr/i,"Interest"],
+  [/refund|cashback|reversal/i,"Other"],
+  [/nach.*cr|sjvn|indian energy/i,"Interest"],
+];
 const guessCategory=(desc,type)=>{const rules=type==="income"?INC_RULES:CAT_RULES;for(const[re,cat]of rules)if(re.test(desc))return cat;return "Other";};
 
-function parseStatement(lines){
-  const out=[];
-  let prevBal=null;
-  let balanceColFound=false;
+const isCreditKw=l=>/\bcr\b|\bneft cr\b|\bimps cr\b|credit|deposit|int paid|interest credit|dep tfr|\bby [a-z]|nach.*cr|refund|cashback|dividend/i.test(l);
+const isDebitKw =l=>/\bdr\b|\bneft dr\b|\bimps dr\b|debit|withdraw|wdl\b|paid|sent|\bto [a-z]/i.test(l);
 
-  // First pass: detect if this statement has Dr/Cr column format
-  const hasDrCr=lines.some(l=>/\bDr\.?\b.*\bCr\.?\b|\bWithdrawal\b.*\bDeposit\b|\bDebit\b.*\bCredit\b/i.test(l));
+/* Transfer detection — uses IFSC codes and account hints in description */
+function detectTransferTo(desc, ref, accounts){
+  // IFSC prefix → which of user's accounts (by hint)
+  const IFSC=[
+    {re:/HDFC0/i,   hints:["9712"]},
+    {re:/SIBL0|SOUTH\s*I\s*\//i, hints:["0584"]},
+    {re:/KKBK0/i,   hints:["1924"]},
+    {re:/SBIN0/i,   hints:["4034","5194"]},
+  ];
+  const bankAccts=accounts.filter(a=>a.type==="Bank"||a.type==="UPI / Wallet");
+  const loans    =accounts.filter(a=>a.type==="Loan");
+  const ccAccts  =accounts.filter(a=>a.type==="Credit Card");
+  const full=desc+" "+ref;
+  // 1. CC payment keywords
+  if(/credit card|cc payment|cc bill|card payment/i.test(full)&&ccAccts.length)
+    return {id:ccAccts[0].id,label:`CC · ${ccAccts[0].name}`};
+  // 2. Loan payment keywords
+  if(/loan.*emi|emi.*loan|car loan|home loan/i.test(full)&&loans.length)
+    return {id:loans[0].id,label:`Loan · ${loans[0].name}`};
+  // 3. IFSC code → bank account
+  for(const {re,hints} of IFSC){
+    if(re.test(full)){
+      for(const hint of hints){const a=bankAccts.find(x=>x.hint===hint);if(a)return {id:a.id,label:`${a.name}`};}
+    }
+  }
+  // 4. Account hint (last 4 digits) in description
+  for(const a of bankAccts){
+    if(a.hint&&a.hint.length>=4&&full.includes(a.hint))
+      return {id:a.id,label:`${a.name}`};
+  }
+  return null;
+}
+/* Transfer/own-account keywords */
+const isOwnTransfer=l=>/\bneft\b|\bimps\b|\brtgs\b|\btransfer\b|\btfr\b|sent neft|sent imps|mb: sent|wdl tfr|dep tfr/i.test(l);
+
+function parseStatement(lines, accounts=[]){
+  const allText=lines.join(" ");
+  // Bank detection using IFSC / name in header
+  const isKotak=/kotak mahindra|kkbk0007/i.test(allText);
+  const isSIB  =/south indian bank|sibl0/i.test(allText);
+  const isSBI  =/state bank of india|sbin0/i.test(allText);
+
+  const out=[]; let prevBal=null;
+  const skipLine=l=>/^(date\b|sl\.?\s*no|transaction date|value date|particulars|narration|description|opening bal|closing bal|balance b\/f|statement of|account no|customer id|ifsc|page no)/i.test(l.trim());
 
   for(const line of lines){
-    // Try both date formats
+    if(skipLine(line)) continue;
     let dm=line.match(DATE_RE)||line.match(DATE_RE2);
     if(!dm) continue;
     const date=toISO(dm[1],dm[2],dm[3]);
-    if(!date||date<"2000-01-01") continue;
-
-    const rawAmts=(line.match(AMT_RE)||[]).map(a=>parseFloat(a.replace(/,/g,"")));
-    if(!rawAmts.length) continue;
-
-    // Remove duplicates that are within 0.01 of each other (PDF artifacts)
-    const amts=rawAmts.filter((v,i)=>i===0||Math.abs(v-rawAmts[i-1])>0.01);
-    if(!amts.length) continue;
+    if(!date) continue;
 
     let amount=0,type=null;
 
-    // --- Strategy 1: Explicit Dr/Cr suffix ---
-    const drMatch=line.match(/(\d[\d,]*\.\d{2})\s*(?:Dr|DR)\b/);
-    const crMatch=line.match(/(\d[\d,]*\.\d{2})\s*(?:Cr|CR)\b/);
-    if(drMatch&&!crMatch){amount=parseFloat(drMatch[1].replace(/,/g,""));type="expense";}
-    else if(crMatch&&!drMatch){amount=parseFloat(crMatch[1].replace(/,/g,""));type="income";}
-
-    // --- Strategy 2: Separate debit/credit columns (3+ amounts) ---
-    if(!type&&amts.length>=3){
+    /* ── KOTAK: signed ±amount column ── */
+    if(isKotak){
+      const signed=line.match(/\s([+\-])([\d,]+\.\d{2})\b/);
+      if(!signed) continue;
+      amount=parseFloat(signed[2].replace(/,/g,""));
+      type=signed[1]==="+"?"income":"expense";
+      const balM=line.match(/([\d,]+\.\d{2})\s*$/);
+      if(balM) prevBal=parseFloat(balM[1].replace(/,/g,""));
+    } else {
+      /* ── SIB · HDFC · SBI · Generic ──
+         SIB quirk: balance shown as "20,557.77Cr" — strip the Cr */
+      const cl=line.replace(/(\d)(Cr)\b/gi,"$1");
+      const amts=(cl.match(AMT_RE)||[]).map(a=>parseFloat(a.replace(/,/g,""))).filter(v=>v>0.005);
+      if(!amts.length) continue;
       const bal=amts[amts.length-1];
-      const col2=amts[amts.length-2];
-      const col1=amts[amts.length-3];
-      // If one is 0 it's a blank column
-      if(col1<0.01&&col2>0.01){amount=col2;type="income";}
-      else if(col2<0.01&&col1>0.01){amount=col1;type="expense";}
-      else if(col1>0&&col2>0&&prevBal!==null){
-        // Both non-zero: use balance delta
-        const delta=bal-prevBal;
-        if(Math.abs(delta-col2)<1){amount=col2;type="income";}
-        else if(Math.abs(delta+col1)<1){amount=col1;type="expense";}
-        else{amount=col2;type=delta>0?"income":"expense";}
-      }else if(prevBal!==null){
-        const delta=bal-prevBal;
-        amount=Math.abs(delta);type=delta>0?"income":"expense";
-      }
+
+      if(amts.length>=3){
+        /* [c1, c2, balance] — one of c1/c2 is the transaction, other was blank column */
+        const c1=amts[amts.length-3], c2=amts[amts.length-2];
+        if(prevBal!==null){
+          const d=bal-prevBal;
+          if(Math.abs(d+c1)<1.5)     {amount=c1;type="expense";}
+          else if(Math.abs(d-c2)<1.5){amount=c2;type="income";}
+          else if(Math.abs(d+c2)<1.5){amount=c2;type="expense";}
+          else if(Math.abs(d-c1)<1.5){amount=c1;type="income";}
+          else{amount=Math.max(c1,c2);type=isCreditKw(cl)?"income":"expense";}
+        } else {
+          amount=c2>0?c2:c1;
+          type=isCreditKw(cl)?"income":isDebitKw(cl)?"expense":"expense";
+        }
+      } else if(amts.length===2){
+        /* [txAmt, balance] — most common: SIB withdrawals, HDFC single-column, SBI debit/credit */
+        const txAmt=amts[0];
+        if(prevBal!==null){
+          const d=bal-prevBal;
+          amount=txAmt;
+          if(Math.abs(Math.abs(d)-txAmt)<=Math.max(txAmt*0.02,1)){
+            type=d>=0?"income":"expense";
+          } else {
+            type=isCreditKw(cl)?"income":isDebitKw(cl)?"expense":null;
+          }
+        } else {
+          amount=txAmt;
+          type=isCreditKw(cl)?"income":isDebitKw(cl)?"expense":"expense";
+        }
+      } else { continue; /* single amount = summary/balance row, skip */ }
+
+      if(!type) continue;
+      prevBal=bal;
     }
 
-    // --- Strategy 3: 2 amounts = [transaction, balance] ---
-    if(!type&&amts.length===2){
-      const[txAmt,bal]=amts;
-      if(prevBal!==null){
-        const delta=bal-prevBal;
-        if(Math.abs(Math.abs(delta)-txAmt)<1){amount=txAmt;type=delta>0?"income":"expense";}
-        else{amount=txAmt;type="expense";}
-      }else{amount=txAmt;type="expense";}
-    }
-
-    // --- Strategy 4: 1 amount, use keywords ---
-    if(!type&&amts.length===1){
-      amount=amts[0];
-      if(/\bby\b|credit|deposit|received|neft cr|imps cr|upi cr/i.test(line))type="income";
-      else if(/\bto\b|debit|withdraw|paid|sent|neft dr|imps dr|upi dr/i.test(line))type="expense";
-      else type="expense";
-    }
-
-    if(!type)type="expense";
     if(!amount||amount<=0) continue;
-
-    // Update running balance
-    if(amts.length>=2)prevBal=amts[amts.length-1];
-
-    // Clean description
-    const desc=line.replace(DATE_RE,"").replace(DATE_RE2,"").replace(AMT_RE,"").replace(/\b(Dr|Cr|DR|CR)\b/g,"").replace(/\s+/g," ").trim().slice(0,70);
-
-    out.push({date,amount,type,desc,category:guessCategory(desc,type),include:true,key:uid()});
+    const desc=line.replace(DATE_RE2,"").replace(DATE_RE,"")
+      .replace(/\s[+\-][\d,]+\.\d{2}/g,"").replace(AMT_RE,"")
+      .replace(/\b(Cr|Dr|CR|DR|A\/C)\b/g,"").replace(/[^\w\s\/\-@.:]/g," ")
+      .replace(/\s+/g," ").trim().slice(0,70);
+    const transferTo = isOwnTransfer(line)||isOwnTransfer(desc) ? detectTransferTo(desc,"",accounts) : null;
+    out.push({date,amount,type,desc,category:guessCategory(desc,type),include:true,key:uid(),
+      isLikelyTransfer:!!transferTo, suggestedToAccId:transferTo?.id||"", suggestedToLabel:transferTo?.label||""});
   }
   return out;
 }
@@ -276,6 +341,12 @@ function FinanceApp({data,persist}){
   const addAcc   =a=>persist({...data,accounts:[...data.accounts,{...a,id:uid()}]});
   const delAcc   =id=>persist({...data,accounts:data.accounts.filter(a=>a.id!==id),transactions:data.transactions.filter(t=>t.accountId!==id&&t.toAccountId!==id)});
   const editAcc  =(id,changes)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...changes}:a)});
+  const editLoan =(id,outstanding)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,outstandingAmount:+outstanding}:a)});
+  const payLoan  =(loanId,bankAccId,amount,note)=>{
+    const txn={id:uid(),type:"expense",amount:+amount,category:"EMI",accountId:bankAccId,date:today(),note:note||"Loan payment",source:"manual"};
+    const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amount));
+    persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});
+  };
   const addGoal  =g=>persist({...data,goals:[...data.goals,{...g,id:uid()}]});
   const delGoal  =id=>persist({...data,goals:data.goals.filter(g=>g.id!==id)});
   const editGoal =(id,changes)=>persist({...data,goals:data.goals.map(g=>g.id===id?{...g,...changes}:g)});
@@ -307,7 +378,11 @@ function FinanceApp({data,persist}){
   const bankAccounts=data.accounts.filter(a=>a.type==="Bank");
 
   const balances=useMemo(()=>{
-    const b={};data.accounts.forEach(a=>b[a.id]=+a.opening||0);
+    const b={};
+    data.accounts.forEach(a=>{
+      if(a.type==="Loan") b[a.id]=-(a.outstandingAmount||0);
+      else b[a.id]=+a.opening||0;
+    });
     data.transactions.forEach(t=>{const amt=+t.amount||0;
       if(t.type==="income")b[t.accountId]=(b[t.accountId]||0)+amt;
       else if(t.type==="expense")b[t.accountId]=(b[t.accountId]||0)-amt;
@@ -326,7 +401,7 @@ function FinanceApp({data,persist}){
   const pending=data.recurring.filter(r=>r.lastDone!==curMo());
   const trend=useMemo(()=>{const out=[];const now=new Date(month+"-01");for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;const tx=data.transactions.filter(t=>mkKey(t.date)===mk);out.push({m:d.toLocaleString("en-IN",{month:"short"}),In:tx.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),Out:tx.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});}return out;},[data,month]);
 
-  const shared={data,month,setMonth,setModal,balances,netWorth,mIncome,mExpense,dIncome,dExpense,catSpend,monthTxns,todayTxns,trend,expCats,incCats,bankAccounts,pending,markPaid,delTxn,delAcc,editAcc,delGoal,editGoal,delBudget,delRec,exportCSV};
+  const shared={data,month,setMonth,setModal,balances,netWorth,mIncome,mExpense,dIncome,dExpense,catSpend,monthTxns,todayTxns,trend,expCats,incCats,bankAccounts,pending,markPaid,delTxn,delAcc,editAcc,editLoan,payLoan,delGoal,editGoal,delBudget,delRec,exportCSV};
 
   const TABS=[{id:"home",Icon:LayoutDashboard,label:"Home"},{id:"entries",Icon:List,label:"Entries"},{id:"accounts",Icon:Wallet,label:"Accounts"},{id:"budgets",Icon:Target,label:"Budgets"},{id:"goals",Icon:PiggyBank,label:"Goals"}];
 
@@ -356,6 +431,9 @@ function FinanceApp({data,persist}){
       {modal?.type==="editgoal"&&<EditGoalModal close={()=>setModal(null)} goal={modal.goal} editGoal={editGoal} bankAccounts={bankAccounts}/>}
       {modal?.type==="budget"  &&<BudgetModal   close={()=>setModal(null)} setBudget={setBudget} expCats={expCats}/>}
       {modal?.type==="import"  &&<ImportModal   close={()=>setModal(null)} data={data} importTxns={importTxns} expCats={expCats} incCats={incCats}/>}
+      {modal?.type==="loan"    &&<LoanModal     close={()=>setModal(null)} addAcc={addAcc}/>}
+      {modal?.type==="editloan"&&<EditLoanModal  close={()=>setModal(null)} account={modal.account} editLoan={editLoan}/>}
+      {modal?.type==="payloan" &&<PayLoanModal   close={()=>setModal(null)} loan={modal.loan} data={data} payLoan={payLoan} bankAccounts={bankAccounts}/>}
     </div>
   );
 }
@@ -584,7 +662,7 @@ function EntriesScreen({data,month,setMonth,setModal,monthTxns,delTxn,pending,ma
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ACCOUNTS — with detail view & edit
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function AccountsScreen({data,setModal,balances,netWorth,delAcc,editAcc}){
+function AccountsScreen({data,setModal,balances,netWorth,delAcc,editAcc,editLoan,payLoan,bankAccounts}){
   const[detail,setDetail]=useState(null); // null | account object
 
   if(detail){
@@ -634,7 +712,10 @@ function AccountsScreen({data,setModal,balances,netWorth,delAcc,editAcc}){
     <div style={{padding:"52px 16px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={headStyle}>Accounts</h2>
-        <PrimaryBtn onClick={()=>setModal({type:"account"})}><Plus size={15}/> Add</PrimaryBtn>
+        <div style={{display:"flex",gap:8}}>
+          <PrimaryBtn onClick={()=>setModal({type:"account"})}><Plus size={15}/> Account</PrimaryBtn>
+          <PrimaryBtn onClick={()=>setModal({type:"loan"})}><Plus size={15}/> Loan</PrimaryBtn>
+        </div>
       </div>
       <div style={{background:C.dark,borderRadius:16,padding:"16px 20px",marginBottom:16}}>
         <div style={{fontSize:11,color:"#6B9A8A",letterSpacing:"0.08em",textTransform:"uppercase"}}>Total Net Worth</div>
@@ -642,7 +723,45 @@ function AccountsScreen({data,setModal,balances,netWorth,delAcc,editAcc}){
       </div>
       {data.accounts.length===0&&<div style={{background:C.card,borderRadius:14,padding:24,textAlign:"center",color:C.muted}}>No accounts yet. Add a bank, UPI wallet, or cash.</div>}
       <div style={{display:"grid",gap:12}}>
-        {data.accounts.map((a,i)=>(
+        {data.accounts.map((a,i)=>{
+          if(a.type==="Loan"){
+            const paid=Math.max(0,(a.sanctionedAmount||0)-(a.outstandingAmount||0));
+            const pct=a.sanctionedAmount?Math.min(100,paid/a.sanctionedAmount*100):0;
+            return(
+              <div key={a.id} style={{background:C.card,borderRadius:16,padding:16,boxShadow:"0 2px 10px rgba(0,0,0,0.06)",borderLeft:"4px solid #FF5A5F"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,color:C.ink}}>{a.name}</div>
+                    <div style={{fontSize:12,color:C.muted,marginTop:2}}>{a.loanType||"Loan"}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>setModal({type:"editloan",account:a})} style={iconBtn}><Edit2 size={15}/></button>
+                    <button onClick={()=>{if(window.confirm("Delete loan?"))delAcc(a.id);}} style={iconBtn}><Trash2 size={15}/></button>
+                  </div>
+                </div>
+                {/* Fuel bar */}
+                <div style={{marginTop:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6}}>
+                    <span style={{color:C.brand,fontWeight:600}}>Paid {inr(paid)}</span>
+                    <span style={{color:C.muted}}>of {inr(a.sanctionedAmount||0)}</span>
+                  </div>
+                  <div style={{height:14,background:"#FFE8E8",borderRadius:7,overflow:"hidden",position:"relative"}}>
+                    <div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${C.brand},#00A07A)`,borderRadius:7,transition:"width .4s"}}/>
+                    <span style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:pct>60?"#fff":C.expense}}>{Math.round(pct)}%</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:6}}>
+                    <span>Outstanding</span>
+                    <span style={{fontFamily:"Georgia,serif",fontSize:15,fontWeight:700,color:C.expense}}>−{inr(a.outstandingAmount||0)}</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,marginTop:12}}>
+                  <button onClick={()=>setModal({type:"payloan",loan:a})} style={{flex:1,background:C.brandDim,border:`1px solid ${C.brand}`,borderRadius:10,padding:"8px 0",color:C.brand,fontWeight:700,fontSize:13,cursor:"pointer"}}>💳 Pay EMI</button>
+                  <button onClick={()=>setModal({type:"editloan",account:a})} style={{flex:1,background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:"8px 0",color:C.muted,fontWeight:700,fontSize:13,cursor:"pointer"}}>Update Outstanding</button>
+                </div>
+              </div>
+            );
+          }
+          return(
           <div key={a.id} onClick={()=>setDetail(a)} style={{background:C.card,borderRadius:16,padding:16,boxShadow:"0 2px 10px rgba(0,0,0,0.06)",borderLeft:`4px solid ${C.charts[(i+3)%C.charts.length]}`,cursor:"pointer"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
@@ -655,11 +774,10 @@ function AccountsScreen({data,setModal,balances,netWorth,delAcc,editAcc}){
               </div>
             </div>
             <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:700,color:(balances[a.id]||0)<0?C.expense:C.ink,marginTop:12}}>{inr(balances[a.id])}</div>
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:8,fontSize:11,color:C.muted}}>
-              <span>Tap for transactions →</span>
-            </div>
+            <div style={{fontSize:11,color:C.muted,marginTop:8}}>Tap for transactions →</div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1018,7 +1136,7 @@ function ImportModal({close,data,importTxns,expCats,incCats}){
       const blob=lines.join(" ");
       const hit=data.accounts.find(a=>a.hint&&new RegExp(`[Xx*]{2,}\\s*${a.hint}\\b|${a.hint}\\b`).test(blob));
       if(hit)setAccId(hit.id);
-      const parsed=parseStatement(lines);
+      const parsed=parseStatement(lines, data.accounts);
       if(!parsed.length){setErr("No transaction rows found. Make sure this is a digital e-statement from netbanking, not a scanned PDF.");setStep("pick");return;}
       setRows(parsed);setStep("review");
     }catch(e){setErr(e.message||"Couldn't read this PDF.");setStep("pick");}
@@ -1026,8 +1144,9 @@ function ImportModal({close,data,importTxns,expCats,incCats}){
 
   const doImport=()=>{const res=importTxns(rows.filter(r=>r.include),accId);setResult(res);setStep("done");};
   const toggle=k=>setRows(rows.map(r=>r.key===k?{...r,include:!r.include}:r));
-  const setCat=(k,c)=>setRows(rows.map(r=>r.key===k?{...r,category:c}:r));
-  const setType=(k,t)=>setRows(rows.map(r=>r.key===k?{...r,type:t,category:guessCategory(r.desc,t)}:r));
+  const setCat =(k,c)=>setRows(rows.map(r=>r.key===k?{...r,category:c}:r));
+  const setType=(k,t)=>setRows(rows.map(r=>r.key===k?{...r,type:t,category:t==="transfer"?r.category:guessCategory(r.desc,t)}:r));
+  const setToAcc=(k,id)=>setRows(rows.map(r=>r.key===k?{...r,suggestedToAccId:id}:r));
   const included=rows.filter(r=>r.include).length;
 
   return(<Sheet close={close} title="Import Statement">
@@ -1055,9 +1174,18 @@ function ImportModal({close,data,importTxns,expCats,incCats}){
               </div>
               <span style={{fontFamily:"Georgia,serif",fontSize:13,fontWeight:700,color:r.type==="income"?C.income:C.expense,flexShrink:0}}>{r.type==="income"?"+":"−"}{inr(r.amount)}</span>
             </div>
-            {r.include&&<div style={{display:"flex",gap:6,marginTop:8}}>
-              <select value={r.type} onChange={e=>setType(r.key,e.target.value)} style={{...field,marginBottom:0,padding:"5px 8px",fontSize:11,flex:1}}><option value="expense">Expense</option><option value="income">Income</option></select>
-              <select value={r.category} onChange={e=>setCat(r.key,e.target.value)} style={{...field,marginBottom:0,padding:"5px 8px",fontSize:11,flex:2}}>{(r.type==="income"?incCats:expCats).map(c=><option key={c}>{c}</option>)}</select>
+            {r.isLikelyTransfer&&r.type!=="transfer"&&<div style={{fontSize:10,color:C.xfer,marginTop:4,fontWeight:600}}>⚡ Looks like a transfer — change type below</div>}
+            {r.include&&<div style={{display:"grid",gap:4,marginTop:8}}>
+              <div style={{display:"flex",gap:6}}>
+                <select value={r.type} onChange={e=>setType(r.key,e.target.value)} style={{...field,marginBottom:0,padding:"5px 8px",fontSize:11,flex:1}}>
+                  <option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (own account)</option>
+                </select>
+                {r.type!=="transfer"&&<select value={r.category} onChange={e=>setCat(r.key,e.target.value)} style={{...field,marginBottom:0,padding:"5px 8px",fontSize:11,flex:2}}>{(r.type==="income"?incCats:expCats).map(c=><option key={c}>{c}</option>)}</select>}
+              </div>
+              {r.type==="transfer"&&<select value={r.suggestedToAccId} onChange={e=>setToAcc(r.key,e.target.value)} style={{...field,marginBottom:0,padding:"5px 8px",fontSize:11}}>
+                <option value="">— Select destination account —</option>
+                {data.accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
+              </select>}
             </div>}
           </div>
         ))}
@@ -1070,6 +1198,72 @@ function ImportModal({close,data,importTxns,expCats,incCats}){
       {result.skipped>0&&<div style={{fontSize:13,color:C.muted,marginTop:6}}>{result.skipped} duplicate{result.skipped===1?"":"s"} skipped</div>}
       <button onClick={close} style={{...saveBtn,marginTop:20}}>Done</button>
     </div>}
+  </Sheet>);
+}
+
+
+/* ── Loan Account Modal ─── */
+function LoanModal({close,addAcc}){
+  const[f,setF]=useState({name:"",loanType:LOAN_TYPES[0],sanctionedAmount:"",outstandingAmount:""});
+  const s=k=>e=>setF({...f,[k]:e.target.value});
+  return(<Sheet close={close} title="Add Loan Account">
+    <label style={lbl}>Loan name</label><input style={field} value={f.name} onChange={s("name")} placeholder="e.g. SBI Car Loan"/>
+    <label style={lbl}>Loan type</label>
+    <select style={field} value={f.loanType} onChange={s("loanType")}>{LOAN_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+    <label style={lbl}>Sanctioned / Total amount (₹)</label>
+    <input style={field} type="number" value={f.sanctionedAmount} onChange={s("sanctionedAmount")} placeholder="780000"/>
+    <label style={lbl}>Outstanding now (₹)</label>
+    <input style={field} type="number" value={f.outstandingAmount} onChange={s("outstandingAmount")} placeholder="576797"/>
+    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Paid so far = Total − Outstanding. The fuel bar fills as you pay off the loan.</p>
+    <button onClick={()=>{if(!f.name||!f.sanctionedAmount)return;addAcc({name:f.name,type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctionedAmount,outstandingAmount:+f.outstandingAmount||0,opening:0,hint:""});close();}} style={saveBtn}>Add Loan</button>
+  </Sheet>);
+}
+
+/* ── Edit Loan Outstanding ─── */
+function EditLoanModal({close,account,editLoan}){
+  const[outstanding,setOutstanding]=useState(account.outstandingAmount||0);
+  const paid=Math.max(0,(account.sanctionedAmount||0)-outstanding);
+  const pct=account.sanctionedAmount?Math.min(100,paid/account.sanctionedAmount*100):0;
+  return(<Sheet close={close} title="Update Outstanding">
+    <div style={{background:C.dark,borderRadius:14,padding:16,marginBottom:16,color:"#fff",textAlign:"center"}}>
+      <div style={{fontSize:11,color:"#6B9A8A",textTransform:"uppercase",letterSpacing:"0.08em"}}>{account.loanType} · {account.name}</div>
+      <div style={{height:10,background:"rgba(255,255,255,0.1)",borderRadius:5,margin:"12px 0 6px"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:C.brand,borderRadius:5}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6B9A8A"}}>
+        <span>Paid: {inr(paid)}</span><span>Total: {inr(account.sanctionedAmount||0)}</span>
+      </div>
+    </div>
+    <label style={lbl}>Current outstanding (₹)</label>
+    <input autoFocus style={field} type="number" value={outstanding} onChange={e=>setOutstanding(e.target.value)} placeholder="Enter latest outstanding amount"/>
+    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Get this number from your latest bank statement or loan account page.</p>
+    <button onClick={()=>{editLoan(account.id,+outstanding);close();}} style={saveBtn}>Update</button>
+  </Sheet>);
+}
+
+/* ── Pay Loan EMI ─── */
+function PayLoanModal({close,loan,data,payLoan,bankAccounts}){
+  const[amt,setAmt]=useState("");
+  const[bankId,setBankId]=useState(bankAccounts[0]?.id||"");
+  const[note,setNote]=useState(`${loan.loanType||"Loan"} EMI`);
+  const a=evalExpr(amt);
+  return(<Sheet close={close} title={`Pay EMI — ${loan.name}`}>
+    <div style={{background:"#FFF8E8",borderRadius:12,padding:14,marginBottom:14,border:"1px solid #FDE68A"}}>
+      <div style={{fontSize:12,color:"#92400E",fontWeight:600}}>Outstanding</div>
+      <div style={{fontFamily:"Georgia,serif",fontSize:24,fontWeight:700,color:C.expense}}>{inr(loan.outstandingAmount||0)}</div>
+      <div style={{fontSize:11,color:"#92400E",marginTop:4}}>After payment, outstanding will reduce by your EMI amount.</div>
+    </div>
+    <label style={lbl}>EMI amount (₹)</label>
+    <input autoFocus style={field} type="number" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="e.g. 14500"/>
+    <label style={lbl}>Pay from account</label>
+    <select style={field} value={bankId} onChange={e=>setBankId(e.target.value)}>
+      {bankAccounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+    </select>
+    <label style={lbl}>Note</label>
+    <input style={field} value={note} onChange={e=>setNote(e.target.value)}/>
+    <button onClick={()=>{if(!a||a<=0||!bankId)return;payLoan(loan.id,bankId,a,note);close();}} style={saveBtn}>
+      Pay {!isNaN(a)&&a>0?inr(a):""}
+    </button>
   </Sheet>);
 }
 
