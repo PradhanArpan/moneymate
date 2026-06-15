@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import {
   Wallet, PiggyBank, Target, LayoutDashboard, List,
@@ -425,7 +425,7 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,
       </div>}
 
       {/* Quick cash */}
-      {cashAccount&&<div style={{margin:"12px 16px 0",display:"flex",gap:8"}}>
+      {cashAccount&&<div style={{margin:"12px 16px 0",display:"flex",gap:8}}>
         <button onClick={()=>setModal("quickcash")} style={{display:"flex",alignItems:"center",gap:6,background:C.card,border:`1px solid ${C.border}`,borderRadius:20,padding:"8px 16px",fontSize:13,fontWeight:600,color:C.ink,cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>💵 Quick Cash Entry</button>
       </div>}
 
