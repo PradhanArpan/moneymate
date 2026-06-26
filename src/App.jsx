@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v5.1
+   MONEYMATE  ·  Smart Money Tracker  ·  v5.2
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -15,13 +15,13 @@ import {
 
 /* ── Colours ─────────────────────────────────────────────────────── */
 const C = {
-  bg:"#F7FAFC",card:"#FFFFFF",ink:"#132033",muted:"#78909C",
-  border:"#E6EDF3",brand:"#0DBF9E",brandDim:"#E7FBF6",
-  income:"#0DBF9E",expense:"#F05A6B",xfer:"#5B8DEF",
-  gold:"#F6B44B",dark:"#0D1B2A",warn:"#F59E0B",
-  softExpense:"#FFF0F2",softIncome:"#E7FBF6",softBlue:"#EEF3FF",
-  charts:["#F05A6B","#FF9F43","#F6B44B","#0DBF9E","#5B8DEF",
-          "#A55EEA","#26D9A7","#FC5C7D","#6C5CE7","#00B8D9","#78909C"],
+  bg:"#F3F6F2",card:"#FFFFFF",ink:"#263238",muted:"#7D8B8C",
+  border:"#E0E7E2",brand:"#43A047",brandDim:"#EAF7EA",
+  income:"#43A047",expense:"#EF5350",xfer:"#4F7DD4",
+  gold:"#F9A825",dark:"#123524",warn:"#F59E0B",
+  softExpense:"#FFEDEE",softIncome:"#EAF7EA",softBlue:"#EEF3FF",
+  charts:["#EF5350","#FF9800","#F9A825","#43A047","#4F7DD4",
+          "#8E64C8","#26A69A","#EC407A","#5E6AD2","#00ACC1","#78909C"],
 };
 
 /* ── Constants ───────────────────────────────────────────────────── */
@@ -416,121 +416,182 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,
   const txns=useMemo(()=>periodTxns(data.transactions,period),[data.transactions,period]);
   const inc=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const exp=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
+  const saved=inc-exp;
   const catSpend=useMemo(()=>{const m={};txns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+(+t.amount);});return m;},[txns]);
   const pieData=Object.entries(catSpend).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
-  const topCats=pieData.slice(0,6);
+  const quickCats=(expCats?.length?expCats:EXPENSE_CATS).slice(0,8);
+  const wheelItems=(pieData.length?pieData:quickCats.map(name=>({name,value:0}))).slice(0,8);
   const todayTxns=data.transactions.filter(t=>t.date===today());
-  const todayInc=todayTxns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const todayExp=todayTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
-  const todayCats={};todayTxns.filter(t=>t.type==="expense").forEach(t=>{todayCats[t.category]=(todayCats[t.category]||0)+(+t.amount);});
-  const topToday=Object.entries(todayCats).sort((a,b)=>b[1]-a[1])[0];
+  const todayInc=todayTxns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const planned=data.recurring.map(r=>({...r,status:recurringState(r)})).sort((a,b)=>a.status.rank-b.status.rank||a.status.diff-b.status.diff||a.name.localeCompare(b.name));
   const pendingCount=planned.filter(r=>r.status.key!=="paid").length;
   const dueNow=planned.filter(r=>["overdue","today"].includes(r.status.key)).length;
-  const quickCats=(expCats?.length?expCats:EXPENSE_CATS).slice(0,6);
-  const backupLabel=lastBackupLabel();
   const canShift=["month","week","year"].includes(period.kind||"month");
+  const backupLabel=lastBackupLabel();
+  const cashBal=cashAccount?balances[cashAccount.id]||0:null;
+  const recent=[...data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,4);
+  const pct=v=>exp>0?Math.round((v/exp)*100):0;
+
   return(
-    <div style={{paddingBottom:150}}>
-      <div style={{padding:"44px 18px 18px",background:"linear-gradient(180deg,#F4FFFC 0%,#F7FAFC 100%)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-          <span style={{fontFamily:"Georgia,serif",fontSize:21,color:C.brand,fontWeight:700}}>💰 MoneyMate</span>
-          <button onClick={()=>setModal("settings")} style={{background:C.card,border:`1px solid ${C.border}`,color:C.muted,width:34,height:34,borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(13,27,42,0.05)"}}><Settings size={16}/></button>
-        </div>
-        <div style={{textAlign:"center",background:C.card,borderRadius:24,padding:"20px 16px",boxShadow:"0 8px 28px rgba(13,27,42,0.07)"}}>
-          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.13em",textTransform:"uppercase",marginBottom:6}}>Balance</div>
-          <div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:42,fontWeight:800,color:netWorth<0?C.expense:C.ink,lineHeight:1}}>{inr(netWorth)}</div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:14}}>
-            {canShift&&<button onClick={()=>setPeriod(shiftPeriod(period,-1))} style={SoftRoundBtn}><ChevronLeft size={16}/></button>}
-            <PeriodPicker period={period} setPeriod={setPeriod}/>
-            {canShift&&<button onClick={()=>setPeriod(shiftPeriod(period,1))} style={SoftRoundBtn}><ChevronRight size={16}/></button>}
+    <div style={{minHeight:"100vh",background:"#F3F6F2",paddingBottom:138}}>
+      <div style={{background:C.brand,color:"#fff",padding:"42px 16px 14px",boxShadow:"0 6px 18px rgba(67,160,71,0.25)",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:"rgba(255,255,255,0.18)",display:"grid",placeItems:"center",fontSize:18}}>₹</div>
+            <div>
+              <div style={{fontSize:20,fontWeight:900,letterSpacing:"-0.02em"}}>MoneyMate</div>
+              <div style={{fontSize:11,opacity:0.82,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Daily money tracker</div>
+            </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:16}}>
-            {[["Income",inc,C.income,C.softIncome],["Expense",exp,C.expense,C.softExpense],["Saved",inc-exp,(inc-exp)>=0?C.income:C.expense,(inc-exp)>=0?C.softIncome:C.softExpense]].map(([l,v,col,bg])=>(
-              <div key={l} style={{background:bg,borderRadius:16,padding:"10px 6px"}}>
-                <div style={{fontSize:10,color:C.muted,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase"}}>{l}</div>
-                <div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:17,fontWeight:800,color:col,marginTop:2}}>{inr(v)}</div>
+          <button onClick={()=>setModal("settings")} style={{width:38,height:38,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.18)",color:"#fff",display:"grid",placeItems:"center",cursor:"pointer"}}><Settings size={18}/></button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          {canShift?<button onClick={()=>setPeriod(shiftPeriod(period,-1))} style={MoneyArrowBtn}><ChevronLeft size={18}/></button>:<span/>}
+          <PeriodPicker period={period} setPeriod={setPeriod}/>
+          {canShift?<button onClick={()=>setPeriod(shiftPeriod(period,1))} style={MoneyArrowBtn}><ChevronRight size={18}/></button>:<span/>}
+        </div>
+      </div>
+
+      <div style={{padding:"12px 12px 0"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+          <MoneySummaryTile label="Expense" value={inr(exp)} color={C.expense} accent="−"/>
+          <MoneySummaryTile label="Income" value={inr(inc)} color={C.income} accent="+"/>
+        </div>
+
+        <div style={{background:C.card,borderRadius:26,padding:"14px 8px 12px",boxShadow:"0 8px 24px rgba(38,50,56,0.10)",border:"1px solid rgba(224,231,226,0.8)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 8px 6px"}}>
+            <div>
+              <div style={{fontSize:11,color:C.muted,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase"}}>Balance</div>
+              <div style={{fontSize:26,fontWeight:950,color:netWorth<0?C.expense:C.ink,letterSpacing:"-0.03em"}}>{inr(netWorth)}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:11,color:C.muted,fontWeight:900,letterSpacing:"0.08em",textTransform:"uppercase"}}>Saved</div>
+              <div style={{fontSize:20,fontWeight:950,color:saved>=0?C.income:C.expense,letterSpacing:"-0.02em"}}>{inr(saved)}</div>
+            </div>
+          </div>
+
+          <div style={{position:"relative",height:330,marginTop:2}}>
+            <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",width:214,height:214,borderRadius:"50%",background:"#fff",boxShadow:"inset 0 0 0 1px #EEF1EE, 0 12px 28px rgba(38,50,56,0.08)"}}>
+              {pieData.length>0?<ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={66} outerRadius={99} paddingAngle={2} stroke="none" onClick={s=>setModal("quickadd",{cat:s.name,kind:"expense"})} style={{cursor:"pointer"}}>
+                    {pieData.map((_,i)=><Cell key={i} fill={C.charts[i%C.charts.length]}/>) }
+                  </Pie>
+                  <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
+                </PieChart>
+              </ResponsiveContainer>:<div style={{position:"absolute",inset:18,borderRadius:"50%",border:"28px solid #E8EEE8"}}/>}
+              <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",pointerEvents:"none"}}>
+                <div style={{textAlign:"center",width:120}}>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:900,letterSpacing:"0.1em",textTransform:"uppercase"}}>Spent</div>
+                  <div style={{fontSize:24,fontWeight:950,color:C.expense,letterSpacing:"-0.04em",lineHeight:1.05}}>{inr(exp)}</div>
+                  <div style={{fontSize:10,color:C.muted,fontWeight:800,marginTop:2}}>{periodLabel(period)}</div>
+                </div>
               </div>
+            </div>
+            {wheelItems.map((it,i)=><WheelBubble key={it.name} item={it} index={i} percent={pct(it.value)} onClick={()=>setModal("quickadd",{cat:it.name,kind:"expense"})}/>) }
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,padding:"0 4px"}}>
+            <MoneyMini label="Today spent" value={inr(todayExp)} color={C.expense}/>
+            <MoneyMini label="Today income" value={inr(todayInc)} color={C.income}/>
+            <MoneyMini label="Pending" value={String(pendingCount)} color={dueNow?C.expense:C.gold}/>
+            <MoneyMini label="Cash" value={cashBal===null?"—":inr(cashBal)} color={C.ink}/>
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginTop:12}}>
+          <button onClick={()=>setModal("txn",{entryType:"expense"})} style={MoneyActionRed}><span style={{fontSize:28,lineHeight:1}}>−</span><span>Expense</span></button>
+          <button onClick={()=>setModal("txn",{entryType:"transfer"})} style={MoneyActionBlue}><span style={{fontSize:22,lineHeight:1}}>↔</span><span>Transfer</span></button>
+          <button onClick={()=>setModal("txn",{entryType:"income"})} style={MoneyActionGreen}><span style={{fontSize:28,lineHeight:1}}>+</span><span>Income</span></button>
+        </div>
+
+        {(backupReminder||ccDueAlerts.length>0)&&<div style={{display:"grid",gap:8,marginTop:12}}>
+          {backupReminder&&<div style={NoticeCard}><span style={{fontSize:18}}>💾</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:900,color:"#8A5A00"}}>Backup reminder</div><div style={{fontSize:11,color:"#9A6A00"}}>{backupLabel}</div></div><button onClick={()=>setModal("settings")} style={NoticeBtn}>Back up</button></div>}
+          {ccDueAlerts.map(cc=><div key={cc.id} style={{...NoticeCard,background:"#EEF3FF",borderColor:"#D5E0FF"}}><span style={{fontSize:18}}>💳</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:900,color:C.xfer}}>{cc.name} bill due</div><div style={{fontSize:11,color:C.xfer}}>{cc.daysLeft===0?"Due today":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div><button onClick={()=>setModal("paycc",{cc})} style={{...NoticeBtn,background:C.xfer}}>Pay</button></div>)}
+        </div>}
+
+        <div style={{background:C.card,borderRadius:20,padding:14,marginTop:12,boxShadow:"0 4px 16px rgba(38,50,56,0.07)",border:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <Eye style={{marginBottom:0}}>Quick entry</Eye>
+            <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{background:"none",border:"none",color:C.brand,fontSize:12,fontWeight:900,cursor:"pointer"}}>Full form</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9}}>
+            {quickCats.map((c,i)=><button key={c} onClick={()=>setModal("quickadd",{cat:c,kind:"expense"})} style={{border:"none",background:"transparent",padding:0,cursor:"pointer",textAlign:"center"}}>
+              <div style={{width:52,height:52,borderRadius:"50%",margin:"0 auto 5px",background:C.charts[i%C.charts.length],display:"grid",placeItems:"center",boxShadow:"0 5px 14px rgba(38,50,56,0.14)",color:"#fff",fontSize:23}}>{CAT_EMOJI[c]||"📌"}</div>
+              <div style={{fontSize:10,fontWeight:900,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c}</div>
+            </button>)}
+          </div>
+        </div>
+
+        <PlannedPaymentsCard planned={planned} markPaid={markPaid} delRec={delRec}/>
+
+        {data.accounts.filter(a=>!["Loan","Credit Card"].includes(a.type)).length>0&&<div style={{marginTop:12}}>
+          <Eye style={{paddingLeft:4}}>Accounts</Eye>
+          <div style={{display:"flex",gap:10,overflowX:"auto",padding:"0 2px 4px"}}>
+            {data.accounts.filter(a=>!["Loan","Credit Card"].includes(a.type)).map((a,i)=>(
+              <button key={a.id} onClick={()=>setModal("quickadd",{cat:"Other",kind:"expense"})} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"12px 14px",flexShrink:0,minWidth:136,textAlign:"left",boxShadow:"0 4px 14px rgba(38,50,56,0.06)",cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5}}><span style={{width:10,height:10,borderRadius:"50%",background:C.charts[(i+3)%C.charts.length]}}/><span style={{fontSize:11,color:C.muted,fontWeight:900,whiteSpace:"nowrap"}}>{a.name}</span></div>
+                <div style={{fontSize:19,fontWeight:950,color:(balances[a.id]||0)<0?C.expense:C.ink,letterSpacing:"-0.03em"}}>{inr(balances[a.id])}</div>
+              </button>
             ))}
           </div>
-        </div>
-      </div>
-
-      <Card>
-        <Eye>Today at a glance</Eye>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-          <MiniStat label="Spent" value={inr(todayExp)} color={C.expense} bg={C.softExpense}/>
-          <MiniStat label="Income" value={inr(todayInc)} color={C.income} bg={C.softIncome}/>
-          <MiniStat label="Top" value={topToday?topToday[0]:"—"} color={C.ink} bg={C.bg}/>
-          <MiniStat label="Pending" value={String(pendingCount)} color={dueNow?C.expense:C.gold} bg={dueNow?C.softExpense:"#FFF8E8"}/>
-        </div>
-      </Card>
-
-      {(backupReminder||ccDueAlerts.length>0)&&<div style={{margin:"12px 16px 0",display:"grid",gap:8}}>
-        {backupReminder&&<div style={{background:"#FFF8E8",borderRadius:16,padding:"10px 14px",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:18}}>💾</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#92400E"}}>Backup reminder</div><div style={{fontSize:11,color:"#B45309"}}>{backupLabel}</div></div>
-          <button onClick={()=>setModal("settings")} style={{background:"#FDE68A",border:"none",borderRadius:10,padding:"6px 10px",fontSize:11,fontWeight:800,color:"#92400E",cursor:"pointer"}}>Back up</button>
         </div>}
-        {ccDueAlerts.map(cc=><div key={cc.id} style={{background:C.softBlue,borderRadius:16,padding:"10px 14px",border:"1px solid #C7D7FF",display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:18}}>💳</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:C.xfer}}>{cc.name} bill due</div><div style={{fontSize:11,color:C.xfer}}>{cc.daysLeft===0?"Due today!":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div>
-          <button onClick={()=>setModal("paycc",{cc})} style={{background:C.xfer,border:"none",borderRadius:10,padding:"6px 10px",fontSize:11,fontWeight:800,color:"#fff",cursor:"pointer"}}>Pay</button>
-        </div>)}
-      </div>}
 
-      <Card>
-        <Eye>Spending wheel</Eye>
-        {pieData.length>0?<>
-          <div style={{position:"relative"}}>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={62} outerRadius={96} paddingAngle={3} onClick={s=>setModal("quickadd",{cat:s.name,kind:"expense"})} style={{cursor:"pointer"}}>
-                  {pieData.map((_,i)=><Cell key={i} fill={C.charts[i%C.charts.length]}/>) }
-                </Pie>
-                <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
-              </PieChart>
-            </ResponsiveContainer>
-            <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",pointerEvents:"none"}}>
-              <div style={{textAlign:"center"}}><div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:24,fontWeight:800,color:C.expense}}>{inr(exp)}</div><div style={{fontSize:10,color:C.muted,letterSpacing:"0.09em",fontWeight:800}}>SPENT</div></div>
-            </div>
+        {recent.length>0&&<div style={{background:C.card,borderRadius:20,padding:14,marginTop:12,boxShadow:"0 4px 16px rgba(38,50,56,0.07)",border:`1px solid ${C.border}`}}>
+          <Eye>Recent</Eye>
+          <div style={{display:"grid",gap:9}}>
+            {recent.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:38,height:38,borderRadius:"50%",display:"grid",placeItems:"center",background:t.type==="income"?C.softIncome:t.type==="transfer"?C.softBlue:C.softExpense,fontSize:18}}>{t.type==="transfer"?"↔️":CAT_EMOJI[t.category]||"📌"}</div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:900,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.category}</div><div style={{fontSize:11,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{t.note?` · ${t.note}`:""}</div></div>
+              <div style={{fontSize:14,fontWeight:950,color:t.type==="income"?C.income:t.type==="transfer"?C.xfer:C.expense}}>{t.type==="income"?"+":t.type==="transfer"?"":"−"}{inr(t.amount)}</div>
+            </div>)}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10}}>
-            {topCats.map(({name,value},i)=><CategoryCircle key={name} name={name} value={value} color={C.charts[i%C.charts.length]} onClick={()=>setModal("quickadd",{cat:name,kind:"expense"})}/>) }
-          </div>
-        </>:<div style={{textAlign:"center",padding:"28px 0"}}><div style={{fontSize:44,marginBottom:8}}>💸</div><div style={{color:C.muted,fontSize:13}}>No expenses in {periodLabel(period)}.</div></div>}
-      </Card>
-
-      <div style={{margin:"12px 16px 0",background:C.card,borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 12px rgba(13,27,42,0.06)"}}>
-        <Eye>Quick category entry</Eye>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-          {quickCats.map(c=><button key={c} onClick={()=>setModal("quickadd",{cat:c,kind:"expense"})} style={{border:`1px solid ${C.border}`,background:C.bg,borderRadius:14,padding:"10px 6px",fontSize:12,fontWeight:800,color:C.ink,cursor:"pointer"}}><span style={{fontSize:20,display:"block",marginBottom:3}}>{CAT_EMOJI[c]||"📌"}</span>{c}</button>)}
-        </div>
-      </div>
-
-      {cashAccount&&<div style={{margin:"12px 16px 0"}}>
-        <button onClick={()=>setModal("quickcash")} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"11px 16px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer",boxShadow:"0 2px 10px rgba(13,27,42,0.05)"}}>💵 Quick Cash Entry</button>
-      </div>}
-
-      <PlannedPaymentsCard planned={planned} markPaid={markPaid} delRec={delRec}/>
-
-      {data.accounts.filter(a=>!["Loan","Credit Card"].includes(a.type)).length>0&&<div style={{margin:"12px 16px 16px"}}>
-        <Eye style={{paddingLeft:2}}>Accounts</Eye>
-        <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4,marginTop:8}}>
-          {data.accounts.filter(a=>!["Loan","Credit Card"].includes(a.type)).map((a,i)=>(
-            <div key={a.id} style={{background:C.card,borderRadius:18,padding:"13px 16px",flexShrink:0,minWidth:145,boxShadow:"0 2px 12px rgba(13,27,42,0.06)",borderTop:`3px solid ${C.charts[(i+3)%C.charts.length]}`}}>
-              <div style={{fontSize:11,color:C.muted,fontWeight:700}}>{a.name}</div>
-              <div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:21,fontWeight:800,color:(balances[a.id]||0)<0?C.expense:C.ink,marginTop:4}}>{inr(balances[a.id])}</div>
-            </div>
-          ))}
-        </div>
-      </div>}
-
-      <div style={{position:"fixed",left:14,right:14,bottom:68,zIndex:25,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingBottom:"env(safe-area-inset-bottom)"}}>
-        <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{height:54,borderRadius:18,border:"none",background:C.expense,color:"#fff",fontSize:14,fontWeight:900,letterSpacing:"0.08em",boxShadow:"0 8px 24px rgba(240,90,107,0.28)",cursor:"pointer"}}>EXPENSE</button>
-        <button onClick={()=>setModal("txn",{entryType:"income"})} style={{height:54,borderRadius:18,border:"none",background:C.income,color:"#fff",fontSize:14,fontWeight:900,letterSpacing:"0.08em",boxShadow:"0 8px 24px rgba(13,191,158,0.25)",cursor:"pointer"}}>INCOME</button>
+        </div>}
       </div>
     </div>
   );
 }
+
+function MoneySummaryTile({label,value,color,accent}){
+  return(<div style={{background:C.card,borderRadius:18,padding:"13px 14px",boxShadow:"0 4px 14px rgba(38,50,56,0.07)",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10}}>
+    <div style={{width:34,height:34,borderRadius:"50%",background:color,color:"#fff",display:"grid",placeItems:"center",fontSize:23,fontWeight:900,boxShadow:`0 4px 12px ${color}55`}}>{accent}</div>
+    <div style={{minWidth:0}}><div style={{fontSize:11,color:C.muted,fontWeight:900,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</div><div style={{fontSize:19,fontWeight:950,color,letterSpacing:"-0.03em",whiteSpace:"nowrap"}}>{value}</div></div>
+  </div>);
+}
+
+function MoneyMini({label,value,color}){
+  return(<div style={{background:"#F7FAF6",borderRadius:14,padding:"9px 5px",textAlign:"center",border:"1px solid #E8EEE8",minWidth:0}}>
+    <div style={{fontSize:9,color:C.muted,fontWeight:900,letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div>
+    <div style={{fontSize:13,fontWeight:950,color,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
+  </div>);
+}
+
+function WheelBubble({item,index,percent,onClick}){
+  const pos=[
+    {left:"50%",top:"2%",transform:"translate(-50%,0)"},
+    {left:"82%",top:"15%",transform:"translate(-50%,0)"},
+    {left:"92%",top:"44%",transform:"translate(-50%,-50%)"},
+    {left:"78%",top:"73%",transform:"translate(-50%,-50%)"},
+    {left:"50%",top:"87%",transform:"translate(-50%,-50%)"},
+    {left:"22%",top:"73%",transform:"translate(-50%,-50%)"},
+    {left:"8%",top:"44%",transform:"translate(-50%,-50%)"},
+    {left:"18%",top:"15%",transform:"translate(-50%,0)"},
+  ][index%8];
+  const color=C.charts[index%C.charts.length];
+  return(<button onClick={onClick} style={{position:"absolute",...pos,width:76,border:"none",background:"transparent",padding:0,cursor:"pointer",textAlign:"center"}}>
+    <div style={{width:58,height:58,borderRadius:"50%",margin:"0 auto 4px",background:color,display:"grid",placeItems:"center",boxShadow:`0 7px 16px ${color}55`,border:"3px solid #fff",fontSize:24}}>{CAT_EMOJI[item.name]||"📌"}</div>
+    <div style={{fontSize:10,fontWeight:950,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:"0 1px 0 #fff"}}>{item.name}</div>
+    {item.value>0&&<div style={{fontSize:10,fontWeight:950,color:C.expense,marginTop:1}}>{percent}%</div>}
+  </button>);
+}
+
+const MoneyArrowBtn={width:36,height:36,borderRadius:"50%",border:"none",background:"rgba(255,255,255,0.18)",color:"#fff",display:"grid",placeItems:"center",cursor:"pointer"};
+const MoneyActionRed={height:62,borderRadius:18,border:"none",background:C.expense,color:"#fff",boxShadow:"0 8px 20px rgba(239,83,80,0.28)",fontSize:12,fontWeight:950,textTransform:"uppercase",letterSpacing:"0.05em",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,cursor:"pointer"};
+const MoneyActionGreen={...MoneyActionRed,background:C.income,boxShadow:"0 8px 20px rgba(67,160,71,0.28)"};
+const MoneyActionBlue={...MoneyActionRed,background:C.xfer,boxShadow:"0 8px 20px rgba(79,125,212,0.22)"};
+const NoticeCard={background:"#FFF8E1",border:"1px solid #F6E2A5",borderRadius:18,padding:"10px 12px",display:"flex",alignItems:"center",gap:10};
+const NoticeBtn={background:C.gold,border:"none",borderRadius:999,padding:"7px 11px",fontSize:11,fontWeight:950,color:"#fff",cursor:"pointer"};
 
 function PeriodPicker({period,setPeriod}){
   const[open,setOpen]=useState(false);
@@ -538,7 +599,7 @@ function PeriodPicker({period,setPeriod}){
   const[ce,setCe]=useState(period.end||today());
   const pick=p=>{setPeriod(p);setOpen(false);};
   return(<>
-    <button onClick={()=>setOpen(true)} style={{border:`1px solid ${C.border}`,background:C.bg,color:C.ink,borderRadius:999,padding:"8px 14px",fontSize:12,fontWeight:800,cursor:"pointer",minWidth:140}}>{periodLabel(period)}</button>
+    <button onClick={()=>setOpen(true)} style={{border:"none",background:"rgba(255,255,255,0.18)",color:"#fff",borderRadius:999,padding:"9px 16px",fontSize:13,fontWeight:900,cursor:"pointer",minWidth:150,boxShadow:"inset 0 0 0 1px rgba(255,255,255,0.18)"}}>{periodLabel(period)}</button>
     {open&&<Sheet close={()=>setOpen(false)} title="Select period">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         <button onClick={()=>pick({kind:"today"})} style={PeriodBtn}>Today</button>
