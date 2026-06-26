@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v5
+   MONEYMATE  ·  Smart Money Tracker  ·  v5.1
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -84,6 +84,17 @@ const shiftPeriod=(p,dir)=>{
   return p;
 };
 const periodTxns=(txns,p)=>{const r=periodRange(p);if(!r)return txns;return txns.filter(t=>t.date>=r.start&&t.date<=r.end);};
+const dateDiff=(a,b)=>Math.round((new Date(a).getTime()-new Date(b).getTime())/86400000);
+const recurringDueDate=r=>{const mk=curMo(),[y,m]=mk.split("-").map(Number),ld=new Date(y,m,0).getDate();return `${mk}-${String(Math.min(Math.max(+r.day||1,1),ld)).padStart(2,"0")}`;};
+const recurringState=r=>{
+  const paid=r.lastDone===curMo(),due=recurringDueDate(r),diff=dateDiff(due,today());
+  if(paid)return {key:"paid",label:"Paid",tone:C.income,bg:C.softIncome,rank:4,due,diff};
+  if(diff<0)return {key:"overdue",label:`${Math.abs(diff)}d overdue`,tone:C.expense,bg:C.softExpense,rank:0,due,diff};
+  if(diff===0)return {key:"today",label:"Due today",tone:C.warn,bg:"#FFF8E8",rank:1,due,diff};
+  if(diff<=7)return {key:"soon",label:`In ${diff}d`,tone:C.gold,bg:"#FFF8E8",rank:2,due,diff};
+  return {key:"later",label:`Day ${r.day}`,tone:C.muted,bg:C.bg,rank:3,due,diff};
+};
+const lastBackupLabel=()=>{const d=daysSinceBackup();if(d>=999)return "Never backed up";if(d===0)return "Backed up today";if(d===1)return "Backed up yesterday";return `Last backup: ${d} days ago`;};
 
 
 function evalExpr(s){
@@ -400,7 +411,7 @@ function Main({data,persist,pin}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    HOME TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,setModal}){
+function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,setModal,markPaid,delRec,expCats}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=useMemo(()=>periodTxns(data.transactions,period),[data.transactions,period]);
   const inc=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
@@ -408,7 +419,16 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,
   const catSpend=useMemo(()=>{const m={};txns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+(+t.amount);});return m;},[txns]);
   const pieData=Object.entries(catSpend).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
   const topCats=pieData.slice(0,6);
-  const pending=data.recurring.filter(r=>r.lastDone!==curMo());
+  const todayTxns=data.transactions.filter(t=>t.date===today());
+  const todayInc=todayTxns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
+  const todayExp=todayTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
+  const todayCats={};todayTxns.filter(t=>t.type==="expense").forEach(t=>{todayCats[t.category]=(todayCats[t.category]||0)+(+t.amount);});
+  const topToday=Object.entries(todayCats).sort((a,b)=>b[1]-a[1])[0];
+  const planned=data.recurring.map(r=>({...r,status:recurringState(r)})).sort((a,b)=>a.status.rank-b.status.rank||a.status.diff-b.status.diff||a.name.localeCompare(b.name));
+  const pendingCount=planned.filter(r=>r.status.key!=="paid").length;
+  const dueNow=planned.filter(r=>["overdue","today"].includes(r.status.key)).length;
+  const quickCats=(expCats?.length?expCats:EXPENSE_CATS).slice(0,6);
+  const backupLabel=lastBackupLabel();
   const canShift=["month","week","year"].includes(period.kind||"month");
   return(
     <div style={{paddingBottom:150}}>
@@ -436,9 +456,19 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,
         </div>
       </div>
 
+      <Card>
+        <Eye>Today at a glance</Eye>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          <MiniStat label="Spent" value={inr(todayExp)} color={C.expense} bg={C.softExpense}/>
+          <MiniStat label="Income" value={inr(todayInc)} color={C.income} bg={C.softIncome}/>
+          <MiniStat label="Top" value={topToday?topToday[0]:"—"} color={C.ink} bg={C.bg}/>
+          <MiniStat label="Pending" value={String(pendingCount)} color={dueNow?C.expense:C.gold} bg={dueNow?C.softExpense:"#FFF8E8"}/>
+        </div>
+      </Card>
+
       {(backupReminder||ccDueAlerts.length>0)&&<div style={{margin:"12px 16px 0",display:"grid",gap:8}}>
         {backupReminder&&<div style={{background:"#FFF8E8",borderRadius:16,padding:"10px 14px",border:"1px solid #FDE68A",display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:18}}>💾</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#92400E"}}>Backup reminder</div><div style={{fontSize:11,color:"#B45309"}}>It's been over 30 days since your last backup.</div></div>
+          <span style={{fontSize:18}}>💾</span><div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:"#92400E"}}>Backup reminder</div><div style={{fontSize:11,color:"#B45309"}}>{backupLabel}</div></div>
           <button onClick={()=>setModal("settings")} style={{background:"#FDE68A",border:"none",borderRadius:10,padding:"6px 10px",fontSize:11,fontWeight:800,color:"#92400E",cursor:"pointer"}}>Back up</button>
         </div>}
         {ccDueAlerts.map(cc=><div key={cc.id} style={{background:C.softBlue,borderRadius:16,padding:"10px 14px",border:"1px solid #C7D7FF",display:"flex",alignItems:"center",gap:10}}>
@@ -469,14 +499,18 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,cashAccount,
         </>:<div style={{textAlign:"center",padding:"28px 0"}}><div style={{fontSize:44,marginBottom:8}}>💸</div><div style={{color:C.muted,fontSize:13}}>No expenses in {periodLabel(period)}.</div></div>}
       </Card>
 
+      <div style={{margin:"12px 16px 0",background:C.card,borderRadius:18,padding:"14px 16px",boxShadow:"0 2px 12px rgba(13,27,42,0.06)"}}>
+        <Eye>Quick category entry</Eye>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+          {quickCats.map(c=><button key={c} onClick={()=>setModal("quickadd",{cat:c,kind:"expense"})} style={{border:`1px solid ${C.border}`,background:C.bg,borderRadius:14,padding:"10px 6px",fontSize:12,fontWeight:800,color:C.ink,cursor:"pointer"}}><span style={{fontSize:20,display:"block",marginBottom:3}}>{CAT_EMOJI[c]||"📌"}</span>{c}</button>)}
+        </div>
+      </div>
+
       {cashAccount&&<div style={{margin:"12px 16px 0"}}>
         <button onClick={()=>setModal("quickcash")} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:7,width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:"11px 16px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer",boxShadow:"0 2px 10px rgba(13,27,42,0.05)"}}>💵 Quick Cash Entry</button>
       </div>}
 
-      {pending.length>0&&<div style={{margin:"12px 16px 0",background:"#FFFBEB",borderRadius:18,padding:"14px 16px",border:"1px solid #FDE68A"}}>
-        <Eye style={{color:"#92400E"}}>⏰ Planned this month</Eye>
-        {pending.map(r=><div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{CAT_EMOJI[r.category]||"📌"} {r.name}</div><div style={{fontSize:11,color:C.muted}}>Day {r.day}</div></div><span style={{fontFamily:"Fraunces,Georgia,serif",fontSize:15,fontWeight:800,color:r.type==="income"?C.income:C.expense}}>{r.type==="income"?"+":"−"}{inr(r.amount)}</span></div>)}
-      </div>}
+      <PlannedPaymentsCard planned={planned} markPaid={markPaid} delRec={delRec}/>
 
       {data.accounts.filter(a=>!["Loan","Credit Card"].includes(a.type)).length>0&&<div style={{margin:"12px 16px 16px"}}>
         <Eye style={{paddingLeft:2}}>Accounts</Eye>
@@ -531,6 +565,41 @@ function CategoryCircle({name,value,color,onClick}){
     <div style={{fontSize:11,fontWeight:800,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
     <div style={{fontSize:11,fontWeight:800,color:C.expense,marginTop:2}}>{inr(value)}</div>
   </button>);
+}
+
+function MiniStat({label,value,color,bg}){
+  return(<div style={{background:bg,borderRadius:14,padding:"10px 6px",textAlign:"center",minWidth:0}}>
+    <div style={{fontSize:10,color:C.muted,fontWeight:900,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</div>
+    <div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:15,fontWeight:900,color,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value}</div>
+  </div>);
+}
+
+function PlannedPaymentsCard({planned,markPaid,delRec}){
+  if(!planned.length)return null;
+  const groups=[
+    ["overdue","Overdue"],["today","Due today"],["soon","Due this week"],["later","Upcoming later"],["paid","Paid"]
+  ].map(([key,label])=>({key,label,rows:planned.filter(r=>r.status.key===key)})).filter(g=>g.rows.length);
+  return(<div style={{margin:"12px 16px 0",background:"#FFFBEB",borderRadius:18,padding:"14px 16px",border:"1px solid #FDE68A"}}>
+    <Eye style={{color:"#92400E"}}>⏰ Planned this month</Eye>
+    {groups.map(g=><div key={g.key} style={{marginTop:10}}>
+      <div style={{fontSize:10,fontWeight:900,color:C.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6}}>{g.label}</div>
+      <div style={{display:"grid",gap:7}}>
+        {g.rows.slice(0,5).map(r=><div key={r.id} style={{display:"flex",alignItems:"center",gap:8,background:r.status.bg,borderRadius:13,padding:"9px 10px",border:`1px solid ${r.status.tone}22`}}>
+          <div style={{fontSize:18}}>{CAT_EMOJI[r.category]||"📌"}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div>
+            <div style={{fontSize:11,color:C.muted}}>Due {new Date(r.status.due).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontFamily:"Fraunces,Georgia,serif",fontSize:14,fontWeight:900,color:r.type==="income"?C.income:C.expense}}>{r.type==="income"?"+":"−"}{inr(r.amount)}</div>
+            <span style={{display:"inline-block",fontSize:10,fontWeight:900,color:r.status.tone,background:"#fff",borderRadius:999,padding:"2px 7px",marginTop:2}}>{r.status.label}</span>
+          </div>
+          {r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={{background:C.brand,border:"none",borderRadius:10,color:"#fff",fontSize:11,fontWeight:900,padding:"6px 9px",cursor:"pointer"}}>Paid</button>}
+          <button onClick={()=>delRec(r.id)} style={IBN}><Trash2 size={13}/></button>
+        </div>)}
+      </div>
+    </div>)}
+  </div>);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
