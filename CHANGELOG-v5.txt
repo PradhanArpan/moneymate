@@ -1,0 +1,30 @@
+MONEYMATE v5 — Pending Features Implemented
+==========================================
+
+Built forward from the v4 handoff document's Pending Features section.
+
+Implemented in v5:
+1. Softer, lighter home-screen redesign.
+2. Period selector modal with Today, Week, Month, Year, All time and Custom range.
+3. Previous/next period controls for Month, Week and Year.
+4. Home dashboard with larger balance display and heavier number styling.
+5. Donut-style spending wheel retained and refreshed.
+6. Top category circles on Home; tapping a category opens quick amount entry.
+7. Large EXPENSE and INCOME buttons fixed above bottom navigation.
+8. New Categories tab in the bottom navigation.
+9. Categories tab has a 4-column icon grid of expense categories.
+10. Categories tab includes a period-aware donut chart.
+11. Tap a category to see its transactions for the selected period.
+12. Category detail screen includes an Add expense shortcut.
+13. QuickAdd modal now supports both expense and income flows.
+14. PWA service worker cache updated from mm-v4 to mm-v5.
+15. package.json version updated to 5.0.0.
+
+Build check:
+- npm install completed.
+- npm run build completed successfully.
+- Vite warning remains: bundle is larger than 500 kB because most code is still in one App.jsx file. This is not a deployment blocker.
+
+Upload instruction:
+- Upload the contents of this folder directly into the GitHub repo root.
+- Do not upload the folder as a subfolder.
