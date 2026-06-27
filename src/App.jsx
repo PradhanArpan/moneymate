@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v5.4 Mobile UI restore
+   MONEYMATE  ·  Smart Money Tracker  ·  v5.5 Mobile fit UI
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -357,8 +357,8 @@ function Main({data,persist,pin}){
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.ink}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}body{background:#F8F7FC;}input:focus,select:focus{outline:none;border-color:#5367C8!important;}button{font-family:inherit;}`}</style>
-      <div style={{paddingBottom:92}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}body{background:#F8F7FC;margin:0;overflow-x:hidden;}input:focus,select:focus{outline:none;border-color:#5367C8!important;}button{font-family:inherit;}`}</style>
+      <div style={{paddingBottom:76}}>
         {tab==="home"    &&<HomeTab    {...shared}/>} 
         {tab==="entries" &&<EntriesTab {...shared}/>} 
         {tab==="categories"&&<CategoriesTab {...shared}/>} 
@@ -366,10 +366,10 @@ function Main({data,persist,pin}){
         {tab==="budgets" &&<BudgetsTab  {...shared}/>} 
         {tab==="goals"   &&<GoalsTab    {...shared}/>} 
       </div>
-      <nav style={{position:"fixed",bottom:0,left:0,right:0,background:C.tab,borderTop:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:`repeat(${TABS.length},1fr)`,height:66,zIndex:20,padding:"5px 3px calc(5px + env(safe-area-inset-bottom))"}}>
+      <nav style={{position:"fixed",bottom:0,left:0,right:0,background:C.tab,borderTop:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:`repeat(${TABS.length},1fr)`,height:58,zIndex:20,padding:"4px 3px calc(4px + env(safe-area-inset-bottom))"}}>
         {TABS.map(({id,Icon,label})=>(
-          <button key={id} onClick={()=>setTab(id)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:tab===id?C.active:"transparent",border:"none",borderRadius:18,cursor:"pointer",color:C.ink,fontSize:9,fontWeight:tab===id?900:500,overflow:"hidden"}}>
-            <Icon size={20} strokeWidth={tab===id?2.6:2.2}/><span style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+          <button key={id} onClick={()=>setTab(id)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:tab===id?C.active:"transparent",border:"none",borderRadius:15,cursor:"pointer",color:C.ink,fontSize:8.5,fontWeight:tab===id?900:500,overflow:"hidden"}}>
+            <Icon size={18} strokeWidth={tab===id?2.6:2.2}/><span style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
           </button>
         ))}
       </nav>
@@ -445,23 +445,23 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const visible=buildCategoryWheel(rows,expCats);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
-  const left=visible.slice(4,6), right=visible.slice(6,8), top=visible.slice(0,4);
-  return(<div style={Screen}>
+  const top=visible.slice(0,4), left=visible.slice(4,6), right=visible.slice(6,8);
+  return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:62}}>
     <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}>⌂</button>}/>
-    <div style={{padding:"28px 20px 8px"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:22,alignItems:"start"}}>
-        {top.map((r,i)=><CategoryBubble key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
+    <div style={{height:"calc(100dvh - 176px)",minHeight:0,overflow:"hidden",padding:"10px 12px 0"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,alignItems:"start"}}>
+        {top.map((r,i)=><CategoryBubble compact key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"96px 1fr 96px",alignItems:"center",marginTop:34,minHeight:310}}>
-        <div style={{display:"grid",gap:34}}>{left.map((r,i)=><CategoryBubble key={r.name} row={r} index={i+4} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"68px minmax(0,1fr) 68px",alignItems:"center",gap:4,marginTop:14,height:"calc(100% - 108px)",minHeight:270,maxHeight:360}}>
+        <div style={{display:"grid",gap:16,alignContent:"space-around",height:"100%"}}>{left.map((r,i)=><CategoryBubble compact key={r.name} row={r} index={i+4} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>)}</div>
         <div style={CenterRing}>
           <div style={{textAlign:"center"}}>
-            <div style={{fontSize:20,fontWeight:500,marginBottom:6}}>Expenses</div>
-            <div style={{fontSize:24,color:C.expense,fontWeight:500}}>{inr(expense)}</div>
-            <div style={{fontSize:18,color:C.income,marginTop:3}}>{inr(income)}</div>
+            <div style={{fontSize:18,fontWeight:600,marginBottom:5}}>Expenses</div>
+            <div style={{fontSize:22,color:C.expense,fontWeight:600,lineHeight:1.15}}>{inr(expense)}</div>
+            <div style={{fontSize:16,color:C.income,marginTop:3}}>{inr(income)}</div>
           </div>
         </div>
-        <div style={{display:"grid",gap:34}}>{right.map((r,i)=><CategoryBubble key={r.name} row={r} index={i+6} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>)}</div>
+        <div style={{display:"grid",gap:16,alignContent:"space-around",height:"100%",overflow:"hidden"}}>{right.map((r,i)=><CategoryBubble compact key={r.name} row={r} index={i+6} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>)}</div>
       </div>
     </div>
     <FloatingAdd onClick={()=>setModal("txn",{entryType:"expense"})}/>
@@ -512,10 +512,10 @@ function AccountsTab({data,balances,netWorth,delAcc,setModal}){
     </div>
     <div style={{padding:"18px 22px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:26}}><div style={{fontSize:23,fontWeight:800,color:C.brand}}>{section==="accounts"?"Accounts":"My finances"}</div><div style={{fontSize:21,color:C.muted}}>{inr(rows.reduce((s,a)=>s+(balances[a.id]||0),0))}</div></div>
-      <div style={{display:"grid",gap:20}}>
+      <div style={{display:"grid",gap:16}}>
         {rows.map((a,i)=><button key={a.id} onClick={()=>setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={AccountRow}>
           <div style={{...AccountSquare,background:i%2?"linear-gradient(135deg,#38B2AC,#0F9D90)":"linear-gradient(135deg,#7A8BE8,#5367C8)"}}>{a.type==="Loan"?"₹":a.type==="Credit Card"?"▤":"▣"}</div>
-          <div style={{flex:1,textAlign:"left"}}><div style={{fontSize:20,fontWeight:500,color:C.ink}}>{a.name}</div><div style={{fontSize:16,color:C.muted,marginTop:3}}>{inr(balances[a.id]||0)}</div></div>
+          <div style={{flex:1,textAlign:"left"}}><div style={{fontSize:18,fontWeight:500,color:C.ink}}>{a.name}</div><div style={{fontSize:14,color:C.muted,marginTop:2}}>{inr(balances[a.id]||0)}</div></div>
           <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete account?"))delAcc(a.id);}} style={{...PlainSmall,fontSize:20}}>×</button>
         </button>)}
         <button onClick={()=>setModal(section==="accounts"?"account":"loan")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:20,color:C.ink}}>Add {section==="accounts"?"account":"finance"}</div></button>
@@ -554,38 +554,38 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
 }
 
 /* ── 1Money-style UI helpers ───────────────────────────────────── */
-const Screen={minHeight:"100vh",background:C.bg,paddingBottom:82};
-const HeaderIconBtn={width:42,height:42,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:24,cursor:"pointer"};
-const HeaderArrow={width:42,height:42,border:"none",background:"transparent",color:"#45454F",fontSize:30,fontWeight:300,cursor:"pointer",lineHeight:1};
-function MoneyHeader({netWorth=0,month,setMonth,right}){return(<div style={{background:C.tab,padding:"38px 14px 14px",borderBottom:`1px solid ${C.border}`}}>
-  <div style={{display:"grid",gridTemplateColumns:"46px 1fr 46px",alignItems:"center"}}>
-    <button style={HeaderIconBtn}>◎</button><div style={{textAlign:"center"}}><div style={{fontSize:15,fontWeight:500}}>All accounts</div><div style={{fontSize:23,fontWeight:500,marginTop:2}}>{inr(netWorth)}</div></div>{right||<span/>}
+const Screen={minHeight:"100dvh",background:C.bg,paddingBottom:70,overflowX:"hidden"};
+const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
+const HeaderArrow={width:36,height:36,border:"none",background:"transparent",color:"#45454F",fontSize:27,fontWeight:300,cursor:"pointer",lineHeight:1};
+function MoneyHeader({netWorth=0,month,setMonth,right}){return(<div style={{position:"sticky",top:0,zIndex:15,background:C.tab,padding:"calc(12px + env(safe-area-inset-top)) 12px 10px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 1px 0 rgba(0,0,0,.02)"}}>
+  <div style={{display:"grid",gridTemplateColumns:"40px 1fr 40px",alignItems:"center"}}>
+    <button style={HeaderIconBtn}>◎</button><div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:500}}>All accounts</div><div style={{fontSize:22,fontWeight:500,marginTop:1,lineHeight:1.05}}>{inr(netWorth)}</div></div>{right||<span/>}
   </div>
-  {month&&setMonth&&<div style={{display:"grid",gridTemplateColumns:"46px 1fr 46px",alignItems:"center",marginTop:12}}>
+  {month&&setMonth&&<div style={{display:"grid",gridTemplateColumns:"40px 1fr 40px",alignItems:"center",marginTop:10}}>
     <button onClick={()=>setMonth(prevMo(month))} style={HeaderArrow}>≪</button>
-    <button onClick={()=>{}} style={{justifySelf:"center",border:"none",background:C.active,borderRadius:999,padding:"8px 16px",fontSize:16,fontWeight:900,color:C.ink,display:"flex",alignItems:"center",gap:14,cursor:"default"}}><span style={{border:"3px solid #222331",borderRadius:12,padding:"4px 7px",fontSize:15,lineHeight:1}}>{new Date(month+"-01").getDate()}</span>{monthLabel(month).toUpperCase()} <span style={{fontSize:18}}>⌄</span></button>
+    <button onClick={()=>{}} style={{justifySelf:"center",maxWidth:"min(270px,76vw)",border:"none",background:C.active,borderRadius:999,padding:"7px 14px",fontSize:15,fontWeight:900,color:C.ink,display:"flex",alignItems:"center",justifyContent:"center",gap:12,cursor:"default",whiteSpace:"nowrap"}}><span style={{border:"3px solid #222331",borderRadius:12,padding:"3px 7px",fontSize:14,lineHeight:1}}>{new Date(month+"-01").getDate()}</span><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{monthLabel(month).toUpperCase()}</span> <span style={{fontSize:16}}>⌄</span></button>
     <button onClick={()=>setMonth(nextMo(month))} style={HeaderArrow}>≫</button>
   </div>}
 </div>)}
 function catLabel(n){return {Food:"Restaurant",Entertainment:"Leisure",Other:"Family",Gift:"Gifts",Transport:"Transport",Groceries:"Groceries",Shopping:"Shopping",Health:"Health",Salary:"Salary"}[n]||n;}
 function categoryRows(txns,cats){const m={};txns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+(+t.amount);});return cats.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||cats.indexOf(a.name)-cats.indexOf(b.name));}
 function buildCategoryWheel(rows,cats){const wanted=["Groceries","Food","Entertainment","Transport","Health","Other","Gift","Shopping"];const by=new Map(rows.map(r=>[r.name,r]));return wanted.map((n,i)=>by.get(n)||{name:cats.includes(n)?n:(n==="Gift"?"Other":n),value:0}).filter((r,i,a)=>a.findIndex(x=>x.name===r.name)===i).slice(0,8);}
-const CircleBase={width:64,height:64,borderRadius:"50%",display:"grid",placeItems:"center",margin:"10px auto 8px"};
-function CategoryBubble({row,index=0,onClick,compact=false}){const color=C.charts[index%C.charts.length];return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0}}>
-  <div style={{fontSize:compact?15:16,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{catLabel(row.name)}</div>
-  <div style={{fontSize:12,color:"#B5B5BD",marginTop:5}}>{inr(0)}</div>
-  <div style={{...CircleBase,width:compact?56:64,height:compact?56:64,background:`${color}20`,color}}><span style={{fontSize:28}}>{CAT_EMOJI[row.name]||"📌"}</span></div>
-  <div style={{fontSize:14,fontWeight:700,color:row.value?C.ink:C.muted}}>{inr(row.value)}</div>
+const CircleBase={width:54,height:54,borderRadius:"50%",display:"grid",placeItems:"center",margin:"7px auto 6px"};
+function CategoryBubble({row,index=0,onClick,compact=false}){const color=C.charts[index%C.charts.length];return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,maxWidth:compact?76:86,justifySelf:"center"}}>
+  <div style={{fontSize:compact?13:14,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{catLabel(row.name)}</div>
+  <div style={{fontSize:11,color:"#B5B5BD",marginTop:3}}>{inr(0)}</div>
+  <div style={{...CircleBase,width:compact?48:54,height:compact?48:54,background:`${color}20`,color}}><span style={{fontSize:compact?22:24}}>{CAT_EMOJI[row.name]||"📌"}</span></div>
+  <div style={{fontSize:13,fontWeight:800,color:row.value?C.ink:C.muted}}>{inr(row.value)}</div>
 </button>)}
 function CatIcon({name,index=0}){const color=C.charts[index%C.charts.length];return <div style={{width:38,height:38,borderRadius:"50%",background:`${color}20`,display:"grid",placeItems:"center",fontSize:20,flexShrink:0}}>{CAT_EMOJI[name]||"📌"}</div>}
-const CenterRing={width:205,height:205,borderRadius:"50%",border:"18px solid #D6D4D9",display:"grid",placeItems:"center",margin:"0 auto"};
-function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:22,bottom:88,width:64,height:64,borderRadius:22,border:"none",background:C.active,color:"#0D1B62",fontSize:40,lineHeight:1,boxShadow:"0 10px 26px rgba(83,103,200,.22)",zIndex:14,cursor:"pointer"}}>+</button>}
-function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:18,padding:"16px 10px",textAlign:"center"}}><div style={{fontSize:14,color:"#55565F"}}>{label}</div><div style={{fontSize:18,color:C.muted,marginTop:5}}>{value}</div></div>}
-const OverviewCard={background:C.card,borderRadius:20,padding:14,marginBottom:14,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
+const CenterRing={width:"clamp(150px,45vw,176px)",height:"clamp(150px,45vw,176px)",borderRadius:"50%",border:"14px solid #D6D4D9",display:"grid",placeItems:"center",margin:"0 auto"};
+function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:18,bottom:76,width:58,height:58,borderRadius:20,border:"none",background:C.active,color:"#0D1B62",fontSize:36,lineHeight:1,boxShadow:"0 10px 26px rgba(83,103,200,.22)",zIndex:14,cursor:"pointer"}}>+</button>}
+function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:16,padding:"12px 8px",textAlign:"center"}}><div style={{fontSize:13,color:"#55565F"}}>{label}</div><div style={{fontSize:16,color:C.muted,marginTop:4}}>{value}</div></div>}
+const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
 function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
 const EmptyState=({emoji,text})=><div style={{textAlign:"center",padding:"26px 10px",color:C.muted}}><div style={{fontSize:42,marginBottom:8}}>{emoji}</div><div style={{fontSize:13}}>{text}</div></div>;
 const ListLine={display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"};
-const TransactionRow={background:C.card,borderRadius:18,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 2px 8px rgba(32,33,44,.04)",border:`1px solid ${C.border}`};
+const TransactionRow={background:C.card,borderRadius:16,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 2px 8px rgba(32,33,44,.04)",border:`1px solid ${C.border}`};
 const PlainSmall={border:"none",background:"transparent",color:C.muted,fontSize:13,fontWeight:800,cursor:"pointer"};
 const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:"11px 10px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer"};
 const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
@@ -593,10 +593,10 @@ const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,p
 function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Planned this month</div>{planned.slice(0,5).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1}}><div style={{fontWeight:700}}>{r.name}</div><div style={{fontSize:13,color:r.status.tone}}>{r.status.label}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={TinyPill}>Paid</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"14px 0 10px",fontSize:17,fontWeight:active?900:700,color:active?C.brand:"#4B4B55",borderBottom:active?`5px solid ${C.brand}`:"5px solid transparent",cursor:"pointer"}}><span style={{marginRight:10}}>{icon}</span>{label}</button>}
 const AccountRow={display:"flex",alignItems:"center",gap:14,border:"none",background:"transparent",padding:0,cursor:"pointer"};
-const AccountSquare={width:62,height:62,borderRadius:10,display:"grid",placeItems:"center",color:"#fff",fontSize:30,flexShrink:0};
+const AccountSquare={width:54,height:54,borderRadius:10,display:"grid",placeItems:"center",color:"#fff",fontSize:26,flexShrink:0};
 const AddAccountRow={display:"flex",alignItems:"center",gap:14,border:"none",background:"transparent",padding:"22px 0",cursor:"pointer"};
-const DashedPlus={width:62,height:62,borderRadius:10,border:"2px dashed #C9C7D0",display:"grid",placeItems:"center",fontSize:32,color:C.muted,background:"#FAFAFD"};
-function BudgetBand({title,sub,amount,budget,color}){return <div style={{background:`linear-gradient(90deg,${color} 0 18px,#FBF2F7 18px 100%)`,padding:"18px 22px",display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",borderBottom:`1px solid ${C.border}`}}><div><div style={{fontSize:23,fontWeight:500}}>{title}</div><div style={{fontSize:16,color:C.muted,marginTop:3}}>{sub}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:20,color:C.muted}}>{amount}</div><div style={{fontSize:15,color:C.muted,marginTop:8}}>{budget}</div></div></div>}
+const DashedPlus={width:54,height:54,borderRadius:10,border:"2px dashed #C9C7D0",display:"grid",placeItems:"center",fontSize:28,color:C.muted,background:"#FAFAFD"};
+function BudgetBand({title,sub,amount,budget,color}){return <div style={{background:`linear-gradient(90deg,${color} 0 12px,#FBF2F7 12px 100%)`,padding:"14px 18px",display:"grid",gridTemplateColumns:"1fr auto",alignItems:"start",borderBottom:`1px solid ${C.border}`}}><div><div style={{fontSize:21,fontWeight:500}}>{title}</div><div style={{fontSize:14,color:C.muted,marginTop:2}}>{sub}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:18,color:C.muted}}>{amount}</div><div style={{fontSize:13,color:C.muted,marginTop:6}}>{budget}</div></div></div>}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    GOALS TAB — with target date
