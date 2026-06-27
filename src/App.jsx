@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v6.8 Subcategory Budgets
+   MONEYMATE  ·  Smart Money Tracker  ·  v6.9 Category Labels + Budget Clarity
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -37,8 +37,8 @@ const EXPENSE_STRUCTURE = [
   {name:"Education", emoji:"📚", subs:["School / College Fee","Books","Course","Exam Fee","Training"]},
   {name:"Shopping", emoji:"🛍️", subs:["Clothes","Footwear","Electronics","Personal Items","Online Shopping"]},
   {name:"Leisure", emoji:"🎬", subs:["Movies","Travel","Outing","Subscription","Hobbies"]},
-  {name:"Tithe / Offering", emoji:"🙏", subs:["Tithe","Offering","Church / Temple Giving","Charity","Social Support","Gifts / Donations"]},
-  {name:"EMI / Loan", emoji:"🏦", subs:["Car Loan EMI","Home Loan EMI","Personal Loan EMI","Credit Card Payment"]},
+  {name:"Tithe", emoji:"🙏", subs:["Tithe","Offering","Church / Temple Giving","Charity","Social Support","Gifts / Donations"]},
+  {name:"EMI/ Loan", emoji:"🏦", subs:["Car Loan EMI","Home Loan EMI","Personal Loan EMI","Credit Card Payment"]},
   {name:"Work", emoji:"💼", subs:["Office Expense","Professional Fee","Printing","Travel for Work"]},
   {name:"Other", emoji:"📌", subs:["Miscellaneous","Unclear","Adjustments"]},
 ];
@@ -64,8 +64,8 @@ const SUBCATEGORY_MAP = Object.fromEntries([...EXPENSE_STRUCTURE,...INCOME_STRUC
 const CATEGORY_ALIASES = {
   Rent:"Home",Utilities:"Home",Bills:"Home",Mobile:"Home",Internet:"Home",
   Entertainment:"Leisure",Travel:"Leisure",Subscription:"Leisure",
-  EMI:"EMI / Loan",Loan:"EMI / Loan",
-  Giving:"Tithe / Offering",Charity:"Tithe / Offering",Gift:"Tithe / Offering",Gifts:"Tithe / Offering",
+  EMI:"EMI/ Loan",Loan:"EMI/ Loan",
+  Giving:"Tithe",Charity:"Tithe",Gift:"Tithe",Gifts:"Tithe",
   Business:"Consultancy",Refund:"Reimbursement",Other:"Other",
 };
 const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings"];
@@ -620,7 +620,10 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const pieData=rows.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),raw:r.name,value:r.value}));
-  const top=visible.slice(0,4), side=visible.slice(4,8), bottom=visible.slice(8,12);
+  const budgetMonth=period.kind==="month"?period.month:curMo();
+  const periodBudget={...(data.budgets||{}),...((data.budgetOverrides||{})[budgetMonth]||{})};
+  const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name)});
+  const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:58}}>
     <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{height:"calc(100dvh - 164px)",minHeight:0,overflow:"hidden",padding:"6px 8px 0",display:"flex",flexDirection:"column"}}>
@@ -870,7 +873,7 @@ function categoryBudgetTotal(budgets={},cat){const c=mainCategory(cat);return Ob
 function budgetSpentForKey(txns=[],key=""){const p=parseBudgetKey(key);return txns.filter(t=>t.type==="expense"&&mainCategory(t.category||"Other")===p.cat&&(!p.sub||(t.subcategory||"")===p.sub)).reduce((s,t)=>s+(+t.amount||0),0);}
 function hasSubBudgets(budgets={},cat){const c=mainCategory(cat);return Object.keys(budgets).some(k=>{const p=parseBudgetKey(k);return p.cat===c&&!!p.sub;});}
 function buildCategoryWheel(rows,cats){
-  const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];
+  const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe","EMI/ Loan","Work","Other"];
   const by=new Map(rows.map(r=>[r.name,r]));
   const spent=rows.filter(r=>r.value>0).map(r=>r.name);
   const order=[...spent,...wanted,...cats.map(mainCategory)];
@@ -879,11 +882,11 @@ function buildCategoryWheel(rows,cats){
   return out;
 }
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
-function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
+function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;const budget=+row.budget||0;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
   <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
-  <div style={{fontSize:10.5,color:"#B5B5BD",marginTop:1,fontWeight:700}}>{inr(0)}</div>
+  <div style={{fontSize:9.5,color:budget?C.brand:"transparent",marginTop:1,fontWeight:850,whiteSpace:"nowrap"}}>{budget?`Budget ${inr(budget)}`:"."}</div>
   <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
-  <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
+  <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>Spent {inr(row.value)}</div>
 </button>)}
 function BudgetFillBubble({row,index=0,budget=0,onClick,hasSub=false}){
   const spent=+row.value||0;
@@ -1120,7 +1123,7 @@ function InsightsTab({data,balances}){
    MODALS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function AddCategoryModal({close,addCat,expCats}){
-  const suggestions=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];
+  const suggestions=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe","EMI/ Loan","Work","Other"];
   const[name,setName]=useState("");
   const[emoji,setEmoji]=useState("☕");
   const clean=String(name||"").trim();
