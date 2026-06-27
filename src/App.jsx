@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v6.1 Logos + Green Meters
+   MONEYMATE  ·  Smart Money Tracker  ·  v6.5 Master Categories + Subcategories
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -27,19 +27,60 @@ const C = {
 };
 
 /* ── Constants ───────────────────────────────────────────────────── */
-const EXPENSE_CATS  = ["Food","Groceries","Transport","Rent","Utilities","Shopping","Health","Entertainment","EMI","Education","Other"];
-const INCOME_CATS   = ["Salary","Business","Interest","Gift","Other"];
-const BANK_TYPES    = ["Bank","UPI / Wallet","Cash"];
+const EXPENSE_STRUCTURE = [
+  {name:"Food", emoji:"🍽️", subs:["Restaurant","Tea / Coffee","Snacks","Online Food","Office / College Food"]},
+  {name:"Groceries", emoji:"🛒", subs:["Monthly Groceries","Vegetables / Fruits","Milk / Dairy","Household Supplies"]},
+  {name:"Transport", emoji:"🚗", subs:["Fuel","Taxi / Auto","Bus / Metro / Train","Parking / Toll","Vehicle Service"]},
+  {name:"Home", emoji:"🏠", subs:["Rent","Maintenance","Electricity","Water","Gas","Internet","Mobile Recharge"]},
+  {name:"Family", emoji:"👨‍👩‍👧", subs:["Parents","Children","Spouse","Family Support","Domestic Help"]},
+  {name:"Health", emoji:"💊", subs:["Medicine","Doctor","Lab Test","Hospital","Insurance Premium"]},
+  {name:"Education", emoji:"📚", subs:["School / College Fee","Books","Course","Exam Fee","Training"]},
+  {name:"Shopping", emoji:"🛍️", subs:["Clothes","Footwear","Electronics","Personal Items","Online Shopping"]},
+  {name:"Leisure", emoji:"🎬", subs:["Movies","Travel","Outing","Subscription","Hobbies"]},
+  {name:"Tithe / Offering", emoji:"🙏", subs:["Tithe","Offering","Church / Temple Giving","Charity","Social Support","Gifts / Donations"]},
+  {name:"EMI / Loan", emoji:"🏦", subs:["Car Loan EMI","Home Loan EMI","Personal Loan EMI","Credit Card Payment"]},
+  {name:"Work", emoji:"💼", subs:["Office Expense","Professional Fee","Printing","Travel for Work"]},
+  {name:"Other", emoji:"📌", subs:["Miscellaneous","Unclear","Adjustments"]},
+];
+const INCOME_STRUCTURE = [
+  {name:"Salary", emoji:"💼", subs:["Main Salary","Arrears","Allowance"]},
+  {name:"Consultancy", emoji:"🧾", subs:["Project Payment","Honorarium","Professional Fee"]},
+  {name:"Interest", emoji:"💰", subs:["Bank Interest","FD Interest","Savings Interest"]},
+  {name:"Investment Return", emoji:"📈", subs:["Dividend","Mutual Fund Redemption","Capital Gain"]},
+  {name:"Reimbursement", emoji:"↩️", subs:["Travel Reimbursement","Office Reimbursement","Refund"]},
+  {name:"Gift / Support", emoji:"🎁", subs:["Family Support","Gift Received"]},
+  {name:"Other Income", emoji:"✨", subs:["Cashback","Adjustment","Miscellaneous"]},
+];
+const TRANSFER_STRUCTURE = [
+  {name:"Own Transfer", emoji:"↔️", subs:["Bank to Bank","Bank to Cash","Cash to Bank"]},
+  {name:"Credit Card Payment", emoji:"💳", subs:["Bank to Credit Card"]},
+  {name:"Investment Transfer", emoji:"📈", subs:["Bank to Mutual Fund","Bank to FD","Bank to Insurance"]},
+  {name:"Loan Payment", emoji:"🏦", subs:["Bank to Loan Account"]},
+  {name:"Wallet / UPI Transfer", emoji:"📱", subs:["Bank to Wallet","Wallet to Bank"]},
+];
+const EXPENSE_CATS  = EXPENSE_STRUCTURE.map(c=>c.name);
+const INCOME_CATS   = INCOME_STRUCTURE.map(c=>c.name);
+const SUBCATEGORY_MAP = Object.fromEntries([...EXPENSE_STRUCTURE,...INCOME_STRUCTURE,...TRANSFER_STRUCTURE].map(c=>[c.name,c.subs]));
+const CATEGORY_ALIASES = {
+  Rent:"Home",Utilities:"Home",Bills:"Home",Mobile:"Home",Internet:"Home",
+  Entertainment:"Leisure",Travel:"Leisure",Subscription:"Leisure",
+  EMI:"EMI / Loan",Loan:"EMI / Loan",
+  Giving:"Tithe / Offering",Charity:"Tithe / Offering",Gift:"Tithe / Offering",Gifts:"Tithe / Offering",
+  Business:"Consultancy",Refund:"Reimbursement",Other:"Other",
+};
+const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings"];
 const CC_TYPES      = ["Visa","Mastercard","Amex","RuPay","HDFC CC","SBI CC","ICICI CC","Axis CC","Other CC"];
 const LOAN_TYPES    = ["Car Loan","Home Loan","Personal Loan","Education Loan","Business Loan","Gold Loan","Other Loan"];
-const INVEST_TYPES  = ["Mutual Fund","Stocks","SGB","Bonds","FD","PPF","NPS","Other"];
+const INVEST_TYPES  = ["Mutual Fund","Stocks","SGB","Bonds","FD","PPF","NPS","Insurance","Other"];
 const CAT_EMOJI = {
-  Food:"🍜",Groceries:"🛒",Transport:"🚗",Rent:"🏠",Utilities:"⚡",
-  Shopping:"🛍️",Health:"💊",Entertainment:"🎬",EMI:"🏦",Education:"📚",
-  Other:"📌",Salary:"💼",Business:"📈",Interest:"💰",Gift:"🎁",Transfer:"↔️",
-  Family:"📍",Gifts:"🎁",Coffee:"☕",Fuel:"⛽",Travel:"✈️",Bills:"🧾",
-  Mobile:"📱",Internet:"🌐",Subscription:"🔁",Personal:"🙂",Charity:"🤝",Insurance:"🛡️",
+  ...Object.fromEntries(EXPENSE_STRUCTURE.map(c=>[c.name,c.emoji])),
+  ...Object.fromEntries(INCOME_STRUCTURE.map(c=>[c.name,c.emoji])),
+  ...Object.fromEntries(TRANSFER_STRUCTURE.map(c=>[c.name,c.emoji])),
+  Transfer:"↔️",Cashback:"✨",Adjustments:"📌",Insurance:"🛡️",
 };
+const mainCategory=n=>CATEGORY_ALIASES[n]||n;
+const subcatsFor=(cat,type="expense")=>SUBCATEGORY_MAP[mainCategory(cat)]||[];
+const firstSub=(cat,type="expense")=>subcatsFor(cat,type)[0]||"";
 
 const LOGO_CHOICES = [
   {key:"auto", label:"Auto", mark:"AUTO", icon:"✨", bg:"#EEE9FF", fg:"#6C5CE7"},
@@ -214,7 +255,8 @@ const EMPTY={
 const normalize=d=>({
   ...EMPTY,...d,
   accounts:d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS,
-  recurring:d.recurring||[],
+  transactions:(d.transactions||[]).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t),
+  recurring:(d.recurring||[]).map(r=>r.type==="expense"||r.type==="income"?{...r,category:mainCategory(r.category),subcategory:r.subcategory||""}:r),
   customCats:{expense:[],income:[],...(d.customCats||{})},
   budgetOverrides:d.budgetOverrides||{},
   goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
@@ -577,28 +619,31 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const visible=buildCategoryWheel(rows,expCats);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
-  const top=visible.slice(0,4), orbit=visible.slice(4,8);
+  const top=visible.slice(0,4), side=visible.slice(4,8), bottom=visible.slice(8,12);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:58}}>
     <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
-    <div style={{height:"calc(100dvh - 164px)",minHeight:0,overflow:"hidden",padding:"8px 10px 0"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:3,alignItems:"start",height:82}}>
+    <div style={{height:"calc(100dvh - 164px)",minHeight:0,overflow:"hidden",padding:"6px 8px 0",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:2,alignItems:"start",height:76,flexShrink:0}}>
         {top.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
       </div>
-      <div style={{position:"relative",height:"calc(100% - 82px)",minHeight:238,maxHeight:338,marginTop:0}}>
-        <div style={{position:"absolute",left:"2%",top:"9%"}}>{orbit[0]&&<CategoryBubble tiny row={orbit[0]} index={4} side onClick={()=>setModal("quickadd",{cat:orbit[0].name,kind:"expense"})}/>}</div>
-        <div style={{position:"absolute",left:"7%",bottom:"4%"}}>{orbit[1]&&<CategoryBubble tiny row={orbit[1]} index={5} side onClick={()=>setModal("quickadd",{cat:orbit[1].name,kind:"expense"})}/>}</div>
-        <div style={{position:"absolute",right:"2%",top:"9%"}}>{orbit[2]&&<CategoryBubble tiny row={orbit[2]} index={6} side onClick={()=>setModal("quickadd",{cat:orbit[2].name,kind:"expense"})}/>}</div>
-        <div style={{position:"absolute",right:"7%",bottom:"4%"}}>{orbit[3]&&<CategoryBubble tiny row={orbit[3]} index={7} side onClick={()=>setModal("quickadd",{cat:orbit[3].name,kind:"expense"})}/>}</div>
+      <div style={{position:"relative",flex:"1 1 auto",minHeight:190,maxHeight:280,marginTop:0}}>
+        <div style={{position:"absolute",left:"1%",top:"10%"}}>{side[0]&&<CategoryBubble tiny row={side[0]} index={4} side onClick={()=>setModal("quickadd",{cat:side[0].name,kind:"expense"})}/>}</div>
+        <div style={{position:"absolute",left:"4%",bottom:"8%"}}>{side[1]&&<CategoryBubble tiny row={side[1]} index={5} side onClick={()=>setModal("quickadd",{cat:side[1].name,kind:"expense"})}/>}</div>
+        <div style={{position:"absolute",right:"1%",top:"10%"}}>{side[2]&&<CategoryBubble tiny row={side[2]} index={6} side onClick={()=>setModal("quickadd",{cat:side[2].name,kind:"expense"})}/>}</div>
+        <div style={{position:"absolute",right:"4%",bottom:"8%"}}>{side[3]&&<CategoryBubble tiny row={side[3]} index={7} side onClick={()=>setModal("quickadd",{cat:side[3].name,kind:"expense"})}/>}</div>
         <div style={{position:"absolute",left:"50%",top:"52%",transform:"translate(-50%,-50%)"}}>
           <div style={CenterRing}>
             <div style={{textAlign:"center"}}>
-              <div style={{fontSize:17,fontWeight:850,marginBottom:5}}>Expenses</div>
-              <div style={{fontSize:24,color:C.expense,fontWeight:950,lineHeight:1.12}}>{inr(expense)}</div>
-              <div style={{fontSize:16,color:C.income,marginTop:3,fontWeight:850}}>{inr(income)}</div>
+              <div style={{fontSize:16,fontWeight:850,marginBottom:5}}>Expenses</div>
+              <div style={{fontSize:22,color:C.expense,fontWeight:950,lineHeight:1.12}}>{inr(expense)}</div>
+              <div style={{fontSize:15,color:C.income,marginTop:3,fontWeight:850}}>{inr(income)}</div>
               <div style={{fontSize:10,color:C.muted,marginTop:4,fontWeight:800,textTransform:"uppercase"}}>{period.kind||"month"}</div>
             </div>
           </div>
         </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:2,alignItems:"start",height:82,flexShrink:0}}>
+        {bottom.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i+8} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
       </div>
     </div>
     <FloatingAdd onClick={()=>setModal("txn",{entryType:"expense"})}/>
@@ -625,7 +670,7 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{monthLabel(month)}</div></div>
       </div>:<div style={{display:"grid",gap:9}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isInc=t.type==="income",isX=t.type==="transfer";return <div key={t.id} style={TransactionRow}>
-        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:800,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button><button onClick={()=>delTxn(t.id)} style={PlainSmall}>×</button>
+        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:800,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button><button onClick={()=>delTxn(t.id)} style={PlainSmall}>×</button>
       </div>})}</div>}
       <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>setModal("import")} style={SoftBtn}>Import PDF</button>{data.transactions.length>0&&<button onClick={exportCSV} style={SoftBtn}>Export CSV</button>}</div>
     </div>
@@ -804,18 +849,19 @@ function FinanceSummary({assets,debts,netWorth}){return <div style={{background:
   </div>
   <div style={{padding:"13px 12px",textAlign:"center",background:C.bg}}><div style={{fontSize:12,fontWeight:700,color:C.muted}}>Overall Amount</div><div style={{fontSize:22,fontWeight:900,color:netWorth>=0?C.income:C.expense,marginTop:4}}>{inr(netWorth)}</div></div>
 </div>}
-function catLabel(n){return {Food:"Restaurant",Entertainment:"Leisure",Other:"Family",Gift:"Gifts",Transport:"Transport",Groceries:"Groceries",Shopping:"Shopping",Health:"Health",Salary:"Salary"}[n]||n;}
-function categoryRows(txns,cats){const m={};txns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+(+t.amount);});return cats.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||cats.indexOf(a.name)-cats.indexOf(b.name));}
-function buildCategoryWheel(rows,cats){const wanted=["Groceries","Food","Entertainment","Transport","Health","Other","Gift","Shopping"];const by=new Map(rows.map(r=>[r.name,r]));return wanted.map((n,i)=>by.get(n)||{name:cats.includes(n)?n:(n==="Gift"?"Other":n),value:0}).filter((r,i,a)=>a.findIndex(x=>x.name===r.name)===i).slice(0,8);}
+function catLabel(n){return mainCategory(n)||n;}
+function txnSubLabel(t){return t?.subcategory?` · ${t.subcategory}`:"";}
+function categoryRows(txns,cats){const m={};txns.filter(t=>t.type==="expense").forEach(t=>{const k=mainCategory(t.category);m[k]=(m[k]||0)+(+t.amount);});return cats.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||cats.indexOf(a.name)-cats.indexOf(b.name));}
+function buildCategoryWheel(rows,cats){const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];const by=new Map(rows.map(r=>[r.name,r]));return wanted.map(n=>by.get(n)||{name:n,value:0}).filter((r,i,a)=>cats.includes(r.name)&&a.findIndex(x=>x.name===r.name)===i).slice(0,12);}
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
 function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
   <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
   <div style={{fontSize:10.5,color:"#B5B5BD",marginTop:1,fontWeight:700}}>{inr(0)}</div>
-  <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[row.name]||"📌"}</span></div>
+  <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
   <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
 </button>)}
 function BudgetCategoryCarousel({rows,onBudget}){const items=[...rows,{name:"More",value:0,more:true}];const doubled=[...items,...items];return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:76,flex:"0 0 76px"}}><div style={{fontSize:12,fontWeight:850,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:48,height:48,background:"#EFEDEF",fontSize:30,color:C.muted}}>＋</div><div style={{fontSize:12,color:C.muted,fontWeight:900}}>{inr(0)}</div></button>:<div key={`${r.name}-${i}`} style={{width:76,flex:"0 0 76px"}}><CategoryBubble row={r} index={i} compact onClick={onBudget}/></div>)}</div></div>}
-function CatIcon({name,index=0}){const color=C.charts[index%C.charts.length];return <div style={{width:38,height:38,borderRadius:"50%",background:`linear-gradient(135deg,${color}22,#FFFFFFAA)`,display:"grid",placeItems:"center",fontSize:20,flexShrink:0,border:`1px solid ${color}18`}}>{CAT_EMOJI[name]||"📌"}</div>}
+function CatIcon({name,index=0}){const color=C.charts[index%C.charts.length],cat=mainCategory(name);return <div style={{width:38,height:38,borderRadius:"50%",background:`linear-gradient(135deg,${color}22,#FFFFFFAA)`,display:"grid",placeItems:"center",fontSize:20,flexShrink:0,border:`1px solid ${color}18`}}>{CAT_EMOJI[cat]||"📌"}</div>}
 const CenterRing={width:"clamp(132px,40vw,154px)",height:"clamp(132px,40vw,154px)",borderRadius:"50%",border:"13px solid #D8D4DE",display:"grid",placeItems:"center",margin:"0 auto",background:"rgba(255,255,255,.18)",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.45)"};
 function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:18,bottom:74,width:56,height:56,borderRadius:20,border:"none",background:"linear-gradient(135deg,#E8E2FF,#DAD2FF)",color:"#0D1B62",fontSize:35,lineHeight:1,boxShadow:"0 12px 28px rgba(108,92,231,.26)",zIndex:14,cursor:"pointer"}}>+</button>}
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:16,padding:"12px 8px",textAlign:"center"}}><div style={{fontSize:13,color:"#55565F"}}>{label}</div><div style={{fontSize:16,color:C.muted,marginTop:4}}>{value}</div></div>}
@@ -1001,7 +1047,7 @@ function InsightsTab({data,balances}){
    MODALS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function AddCategoryModal({close,addCat,expCats}){
-  const suggestions=["Coffee","Fuel","Travel","Bills","Mobile","Internet","Subscription","Personal","Charity","Insurance","Family","Gifts"];
+  const suggestions=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];
   const[name,setName]=useState("");
   const[emoji,setEmoji]=useState("☕");
   const clean=String(name||"").trim();
@@ -1022,33 +1068,36 @@ function AddCategoryModal({close,addCat,expCats}){
 function QuickAddModal({close,data,addTxn,cat,kind="expense",expCats=EXPENSE_CATS,incCats=INCOME_CATS}){
   const cats=kind==="income"?incCats:expCats;
   const[chosenCat,setChosenCat]=useState(cat||cats[0]);
+  const[subcat,setSubcat]=useState(firstSub(cat||cats[0],kind));
   const[amt,setAmt]=useState(""), [accId,setAccId]=useState(data.accounts.filter(a=>!["Loan"].includes(a.type))[0]?.id||"");
   const p=evalExpr(amt);
   const isIncome=kind==="income";
   return(<Sheet close={close}><div style={{textAlign:"center",marginBottom:18}}><div style={{fontSize:42}}>{isIncome?"💰":CAT_EMOJI[chosenCat]||"📌"}</div><div style={{fontSize:18,fontWeight:800,marginTop:6}}>{isIncome?"Quick Income":chosenCat}</div></div>
     <L>Amount (₹)</L><input autoFocus style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="0"/>
     {/[+\-*/]/.test(String(amt).slice(1))&&!isNaN(p)&&<div style={{fontSize:12,color:C.brand,marginTop:-8,marginBottom:10,fontWeight:700}}>= {inr(p)}</div>}
-    <L>Category</L><select style={F} value={chosenCat} onChange={e=>setChosenCat(e.target.value)}>{cats.map(c=><option key={c}>{c}</option>)}</select>
+    <L>Category</L><select style={F} value={chosenCat} onChange={e=>{setChosenCat(e.target.value);setSubcat(firstSub(e.target.value,kind));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>
+    {subcatsFor(chosenCat,kind).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(chosenCat,kind).map(sc=><option key={sc}>{sc}</option>)}</select></>}
     <L>Account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{data.accounts.filter(a=>a.type!=="Loan").map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:4}}>
       <button onClick={close} style={{padding:"12px 0",borderRadius:12,border:`1px solid ${C.border}`,background:C.bg,color:C.muted,fontWeight:800,fontSize:14,cursor:"pointer"}}>Cancel</button>
-      <button onClick={()=>{const a=evalExpr(amt);if(!a||a<=0||!accId)return;addTxn({type:kind,amount:a,category:chosenCat,accountId:accId,date:today(),note:""});close();}} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
+      <button onClick={()=>{const a=evalExpr(amt);if(!a||a<=0||!accId)return;addTxn({type:kind,amount:a,category:chosenCat,subcategory:subcat,accountId:accId,date:today(),note:""});close();}} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
     </div>
   </Sheet>);
 }
 /* Quick cash entry */
 function QuickCashModal({close,data,addTxn,expCats}){
   const cash=data.accounts.find(a=>a.type==="Cash");
-  const[amt,setAmt]=useState("");const[cat,setCat]=useState(expCats[0]);const[note,setNote]=useState("");
+  const[amt,setAmt]=useState("");const[cat,setCat]=useState(expCats[0]);const[subcat,setSubcat]=useState(firstSub(expCats[0],"expense"));const[note,setNote]=useState("");
   const p=evalExpr(amt);
   return(<Sheet close={close} title="💵 Cash Expense">
     {!cash&&<p style={{color:C.expense,fontSize:13}}>No Cash account found. Add one in Accounts first.</p>}
     {cash&&<><div style={{background:"#F0F9F5",borderRadius:10,padding:10,marginBottom:14,fontSize:13,color:C.brand,fontWeight:600}}>From: {cash.name}</div>
       <L>Amount (₹)</L><input autoFocus style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="0"/>
       {/[+\-*/]/.test(String(amt).slice(1))&&!isNaN(p)&&<div style={{fontSize:12,color:C.brand,marginTop:-8,marginBottom:10,fontWeight:600}}>= {inr(p)}</div>}
-      <L>Category</L><select style={F} value={cat} onChange={e=>setCat(e.target.value)}>{expCats.map(c=><option key={c}>{c}</option>)}</select>
+      <L>Category</L><select style={F} value={cat} onChange={e=>{setCat(e.target.value);setSubcat(firstSub(e.target.value,"expense"));}}>{expCats.map(c=><option key={c}>{c}</option>)}</select>
+      {subcatsFor(cat,"expense").length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,"expense").map(sc=><option key={sc}>{sc}</option>)}</select></>}
       <L>Note (optional)</L><input style={F} value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. auto fare"/>
-      <button onClick={()=>{const a=evalExpr(amt);if(!a||a<=0)return;addTxn({type:"expense",amount:a,category:cat,accountId:cash.id,date:today(),note});close();}} style={SB}>Add Cash Entry</button>
+      <button onClick={()=>{const a=evalExpr(amt);if(!a||a<=0)return;addTxn({type:"expense",amount:a,category:cat,subcategory:subcat,accountId:cash.id,date:today(),note});close();}} style={SB}>Add Cash Entry</button>
     </>}
   </Sheet>);
 }
@@ -1058,6 +1107,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
   const[tp,setTp]=useState(preset?.entryType||"expense");
   const[amt,setAmt]=useState("");
   const[cat,setCat]=useState(preset?.cat||((preset?.entryType||"expense")==="income"?incCats[0]:expCats[0]));
+  const[subcat,setSubcat]=useState(firstSub(preset?.cat||((preset?.entryType||"expense")==="income"?incCats[0]:expCats[0]),preset?.entryType||"expense"));
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
   const[accId,setAccId]=useState(nonLoan[0]?.id||"");
   const[toId,setToId]=useState(data.accounts[1]?.id||data.accounts[0]?.id||"");
@@ -1077,19 +1127,19 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
     if(!accId)return;
     if(isSplit){
       if(!splitOk)return;
-      const txns=splits.filter(sp=>evalExpr(sp.amt)>0).map(sp=>({type:"expense",amount:evalExpr(sp.amt),category:sp.cat,accountId:accId,date,note,id:uid()}));
+      const txns=splits.filter(sp=>evalExpr(sp.amt)>0).map(sp=>({type:"expense",amount:evalExpr(sp.amt),category:sp.cat,subcategory:sp.subcat||firstSub(sp.cat,"expense"),accountId:accId,date,note,id:uid()}));
       addTxns(txns);
     }else{
       const a=evalExpr(amt);if(!a||a<=0)return;
-      addTxn({type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note});
-      if(rep&&tp!=="transfer")addRec({name:note||cat,type:tp,amount:a,category:cat,accountId:accId,day:+date.slice(8,10)||1});
+      addTxn({type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note});
+      if(rep&&tp!=="transfer")addRec({name:note||cat,type:tp,amount:a,category:cat,subcategory:subcat,accountId:accId,day:+date.slice(8,10)||1});
     }
     close();
   };
 
   return(<Sheet close={close} title="New Entry">
     {!isSplit&&<div style={{display:"flex",gap:6,marginBottom:14}}>
-      {["expense","income","transfer"].map(t=><button key={t} onClick={()=>{setTp(t);setCat(t==="income"?incCats[0]:expCats[0]);}} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
+      {["expense","income","transfer"].map(t=><button key={t} onClick={()=>{setTp(t);const nc=t==="income"?incCats[0]:expCats[0];setCat(nc);setSubcat(firstSub(nc,t));}} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
     </div>}
     <L>Total amount (₹)</L>
     <input style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="0  or  200+150"/>
@@ -1108,7 +1158,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
         <div style={{fontSize:11,color:splitOk?C.brand:C.muted,marginTop:6,fontWeight:600}}>Split total: {inr(splitTotal)} {splitOk?"✓ Matches":"≠ Must match total"}</div>
       </div>
     </>}
-    {!isSplit&&tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>e.target.value==="__new"?setShowNC(true):(setCat(e.target.value),setShowNC(false))}>{cats.map(c=><option key={c}>{c}</option>)}<option value="__new">➕ New…</option></select>{showNC&&<div style={{display:"flex",gap:6,marginTop:-8,marginBottom:12}}><input style={{...F,marginBottom:0,flex:1}} value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Category name"/><button onClick={()=>{if(newCat.trim()){addCat(tp,newCat);setCat(newCat.trim());setNewCat("");setShowNC(false);}}} style={{background:C.brand,border:"none",borderRadius:10,padding:"0 14px",color:"#fff",fontWeight:700,cursor:"pointer"}}>Add</button></div>}</>}
+    {!isSplit&&tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>e.target.value==="__new"?setShowNC(true):(setCat(e.target.value),setSubcat(firstSub(e.target.value,tp)),setShowNC(false))}>{cats.map(c=><option key={c}>{c}</option>)}<option value="__new">➕ New…</option></select>{subcatsFor(cat,tp).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,tp).map(sc=><option key={sc}>{sc}</option>)}</select></>}{showNC&&<div style={{display:"flex",gap:6,marginTop:-8,marginBottom:12}}><input style={{...F,marginBottom:0,flex:1}} value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Category name"/><button onClick={()=>{if(newCat.trim()){addCat(tp,newCat);setCat(newCat.trim());setSubcat("");setNewCat("");setShowNC(false);}}} style={{background:C.brand,border:"none",borderRadius:10,padding:"0 14px",color:"#fff",fontWeight:700,cursor:"pointer"}}>Add</button></div>}</>}
     <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     {tp==="transfer"&&<><L>To</L><select style={F} value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
     <L>Date</L><input style={F} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
@@ -1119,16 +1169,16 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
 }
 
 function EditTxnModal({close,txn,data,editTxn,addRec,expCats,incCats}){
-  const[tp,setTp]=useState(txn.type);const[amt,setAmt]=useState(String(txn.amount));const[cat,setCat]=useState(txn.category);
+  const[tp,setTp]=useState(txn.type);const[amt,setAmt]=useState(String(txn.amount));const[cat,setCat]=useState(mainCategory(txn.category));const[subcat,setSubcat]=useState(txn.subcategory||firstSub(mainCategory(txn.category),txn.type));
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
   const[accId,setAccId]=useState(txn.accountId);const[toId,setToId]=useState(txn.toAccountId||"");
   const[date,setDate]=useState(txn.date);const[note,setNote]=useState(txn.note||"");const[mkRec,setMkRec]=useState(false);
   const cats=tp==="income"?incCats:expCats;
-  const go=()=>{const a=evalExpr(amt);if(!a||a<=0)return;editTxn(txn.id,{type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note,recurring:mkRec||txn.recurring});if(mkRec)addRec({name:note||cat,type:tp,amount:a,category:cat,accountId:accId,day:+date.slice(8,10)||1});close();};
+  const go=()=>{const a=evalExpr(amt);if(!a||a<=0)return;editTxn(txn.id,{type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note,recurring:mkRec||txn.recurring});if(mkRec)addRec({name:note||cat,type:tp,amount:a,category:cat,subcategory:subcat,accountId:accId,day:+date.slice(8,10)||1});close();};
   return(<Sheet close={close} title="Edit Entry">
     <div style={{display:"flex",gap:6,marginBottom:14}}>{["expense","income","transfer"].map(t=><button key={t} onClick={()=>setTp(t)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}</div>
     <L>Amount (₹)</L><input style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)}/>
-    {tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>setCat(e.target.value)}>{cats.map(c=><option key={c}>{c}</option>)}</select></>}
+    {tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>{setCat(e.target.value);setSubcat(firstSub(e.target.value,tp));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>{subcatsFor(cat,tp).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,tp).map(sc=><option key={sc}>{sc}</option>)}</select></>}</>}
     <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     {tp==="transfer"&&<><L>To</L><select style={F} value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
     <L>Date</L><input style={F} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
