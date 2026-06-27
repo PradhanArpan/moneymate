@@ -325,7 +325,7 @@ const DRE =/\b(\d{1,2})[\/\-.]((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|De
 const DRE2=/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i;
 const ARE =/(?:\d{1,3}(?:,\d{2,3})+|\d+)\.\d{2}/g;
 const toISO=(d,m,y)=>{const mm=isNaN(+m)?MONTHS[m.toLowerCase().slice(0,3)]:+m;let yy=+y;if(String(y).length===2)yy+=2000;if(!mm||mm>12||+d>31||yy<2000||yy>2100)return null;return `${yy}-${String(mm).padStart(2,"0")}-${String(d).padStart(2,"0")}`;};
-const CCAT=[[/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|thalassery|jalpan|food/i,"Food"],[/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana/i,"Groceries"],[/uber|ola|rapido|irctc|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],[/rent\b|landlord|pg\b/i,"Rent"],[/electricity|bescom|tneb|jio|airtel|broadband|dth|gas bill/i,"Utilities"],[/amazon|flipkart|myntra|ajio|nykaa|meesho/i,"Shopping"],[/pharmacy|apollo|medplus|hospital|clinic|1mg/i,"Health"],[/netflix|spotify|hotstar|bookmyshow|prime|pvr/i,"Entertainment"],[/\bemi\b|loan emi|car loan|home loan/i,"EMI"],[/school|college|udemy|tuition|byjus/i,"Education"],[/indstocks|iccl|zerodha|groww|upstox/i,"Stocks"]];
+const CCAT=[[/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|thalassery|jalpan|food/i,"Food"],[/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana/i,"Groceries"],[/uber|ola|rapido|irctc|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],[/rent\b|landlord|pg\b/i,"Rent"],[/electricity|bescom|tneb|jio|airtel|broadband|dth|gas bill/i,"Utilities"],[/amazon|flipkart|myntra|ajio|nykaa|meesho/i,"Shopping"],[/pharmacy|apollo|medplus|hospital|clinic|1mg/i,"Health"],[/netflix|spotify|hotstar|bookmyshow|prime|pvr/i,"Entertainment"],[/\bemi\b|loan emi|car loan|home loan/i,"EMI"],[/school|college|udemy|tuition|byjus/i,"Education"],[/indstocks|iccl|zerodha|groww|upstox|indmoney|indianesign/i,"Other"]];
 const ICAT=[[/salary|sal cr|payroll/i,"Salary"],[/interest|int cr|int pd/i,"Interest"],[/dividend/i,"Interest"],[/refund|cashback|reversal/i,"Other"]];
 const guessCat=(d,t)=>{const r=t==="income"?ICAT:CCAT;for(const[re,c]of r)if(re.test(d))return c;return "Other";};
 const isCr=l=>/\bcr\b|credit|deposit|interest credit|dep tfr|by [a-z]|refund|cashback|nach.*cr/i.test(l);
@@ -335,13 +335,13 @@ function detectTransfer(desc,accounts){
   const banks=accounts.filter(a=>BANK_TYPES.includes(a.type)||a.type==="UPI / Wallet");
   const cc=accounts.filter(a=>a.type==="Credit Card");
   const loans=accounts.filter(a=>a.type==="Loan");
-  if(/credit card|cc payment|cc bill|card payment/i.test(desc)&&cc.length)return cc[0].id;
+  if(/credit card|cc payment|cc bill|card payment|cred\b/i.test(desc)&&cc.length)return cc[0].id;
   if(/loan.*emi|emi.*loan/i.test(desc)&&loans.length)return loans[0].id;
   for(const{re,hints}of IFSC){if(re.test(desc)){for(const h of hints){const a=banks.find(x=>x.hint===h);if(a)return a.id;}}}
   for(const a of banks){if(a.hint&&a.hint.length>=4&&desc.includes(a.hint))return a.id;}
   return null;
 }
-const isXferKw=l=>/\bneft\b|\bimps\b|\brtgs\b|\btransfer\b|\btfr\b|mb:\s*sent|wdl tfr|dep tfr/i.test(l);
+const isXferKw=l=>/\bneft\b|\bimps\b|\brtgs\b|\btransfer\b|\btfr\b|mb:\s*sent|wdl tfr|dep tfr|indmoney|indstocks|indianesign|hlic|lic_inst|credit card|cc payment|cred\b/i.test(l);
 function matchRecurring(row,recurList){for(const r of recurList){const words=r.name.toLowerCase().split(/\W+/).filter(w=>w.length>3);const hit=words.some(w=>row.desc.toLowerCase().includes(w));const amt=Math.abs(r.amount-row.amount)<=Math.max(r.amount*0.1,20);if(hit&&amt&&r.type===row.type)return r;}return null;}
 function parseStatement(lines,accounts=[],recurList=[]){
   const all=lines.join(" ");
@@ -375,9 +375,43 @@ function parseStatement(lines,accounts=[],recurList=[]){
     const desc=line.replace(DRE2,"").replace(DRE,"").replace(/\s[+\-][\d,]+\.\d{2}/g,"").replace(ARE,"").replace(/\b(Cr|Dr|CR|DR|A\/C)\b/g,"").replace(/[^\w\s\/\-@.:]/g," ").replace(/\s+/g," ").trim().slice(0,70);
     const xferTo=(isXferKw(line)||isXferKw(desc))?detectTransfer(desc+line,accounts):null;
     const recMatch=matchRecurring({desc,amount,type},recurList);
-    out.push({date,amount,type,desc,category:guessCat(desc,type),include:true,key:uid(),isXfer:!!xferTo,xferToId:xferTo||"",recurMatch:recMatch?{id:recMatch.id,name:recMatch.name}:null});
+    out.push({date,amount,type,desc,category:mainCategory(guessCat(desc,type)),subcategory:firstSub(mainCategory(guessCat(desc,type)),type),include:true,key:uid(),isXfer:!!xferTo,xferToId:xferTo||"",recurMatch:recMatch?{id:recMatch.id,name:recMatch.name}:null,balance:prevBal,bank:isKotak?"Kotak":"Generic"});
   }
   return out;
+}
+
+function detectStatementProfile(lines=[]){
+  const all=lines.join(" ");
+  const bank=/kotak mahindra|KKBK0/i.test(all)?"Kotak":/hdfc bank|HDFC000|Statement of account/i.test(all)?"HDFC":/state bank of india|SBIN0/i.test(all)?"SBI":/south indian bank|SIBL0/i.test(all)?"South Indian Bank":"Unknown bank";
+  const acct=(all.match(/Account\s*(?:No|Number|#)\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||all.match(/A\/c\s*No\.?\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||[])[1]||"";
+  const last4=(acct.replace(/\D/g,"").slice(-4))||"";
+  const from=(all.match(/Statement\s+From\s*[:]?\s*([0-9\/\-]{8,10})/i)||all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/)||[])[1]||"";
+  const to=(all.match(/\bTo\s*[:]?\s*([0-9\/\-]{8,10})/i)||all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/)||[])[2]||"";
+  return {bank,accountLast4:last4,period:from&&to?`${from} → ${to}`:""};
+}
+function guessPdfPasswordFromName(name=""){
+  const base=String(name).replace(/\.pdf$/i,"").trim();
+  const parts=base.split(/\s+/).filter(Boolean);
+  const last=parts[parts.length-1]||"";
+  if(/^[A-Za-z0-9@#\-_.]{4,24}$/.test(last))return last;
+  return "";
+}
+const cleanDescForKey=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,48);
+const importDupKey=(accId,r)=>`${accId}|${r.date}|${(+r.amount).toFixed(2)}|${r.type}|${cleanDescForKey(r.desc||r.note)}`;
+function rowConfidence(r){
+  if(r.duplicate)return {label:"Duplicate",tone:C.muted,bg:C.bg,rank:3};
+  if(r.type==="transfer"&&!r.xferToId)return {label:"Review transfer",tone:C.xfer,bg:"#EEF3FF",rank:1};
+  if(r.category==="Other"||!r.category)return {label:"Check category",tone:C.warn,bg:"#FFF8E8",rank:1};
+  if(r.recurMatch)return {label:"Recurring match",tone:C.brand,bg:C.brandDim,rank:0};
+  return {label:"Looks OK",tone:C.income,bg:C.softIncome,rank:0};
+}
+function summarizeImportRows(rows=[]){
+  const debit=rows.filter(r=>r.type==="expense"||r.type==="transfer").reduce((s,r)=>s+(+r.amount||0),0);
+  const credit=rows.filter(r=>r.type==="income").reduce((s,r)=>s+(+r.amount||0),0);
+  const dup=rows.filter(r=>r.duplicate).length;
+  const review=rows.filter(r=>rowConfidence(r).rank>0&&!r.duplicate).length;
+  const withBal=rows.filter(r=>typeof r.balance==="number"&&isFinite(r.balance));
+  return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length};
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1510,44 +1544,48 @@ function SettingsModal({close,data,pin,restoreData}){
 function ImportModal({close,data,importBatch,expCats,incCats}){
   const[step,setStep]=useState("pick");const[file,setFile]=useState(null);const[pwd,setPwd]=useState("");const[needPwd,setNP]=useState(false);
   const[accId,setAId]=useState(data.accounts.filter(a=>a.type!=="Loan")[0]?.id||"");
-  const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);
+  const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);const[profile,setProfile]=useState(null);const[summary,setSummary]=useState(null);
   const[skipped,setSkipped]=useState([]);const[showSkipped,setShowSkipped]=useState(false);
   const[carryoverDate,setCOD]=useState("");const[carryoverAmt,setCOA]=useState("");const[showCarryover,setSC]=useState(false);
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
   const parse=async()=>{if(!file)return;setErr("");setStep("parsing");
     try{const lib=await loadPdf(),buf=await file.arrayBuffer();let pdf;
       try{pdf=await lib.getDocument({data:buf,password:pwd||undefined}).promise;}
-      catch(e){if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setNP(true);setErr(pwd?"Wrong password — try again.":"PDF is password-protected. Enter the password (usually your DOB or mobile number).");setStep("pick");return;}throw e;}
+      catch(e){if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setNP(true);setErr(pwd?"Wrong password — try again.":"PDF is password-protected. I tried the filename password if available. Please check or edit the password.");setStep("pick");return;}throw e;}
       const lines=await extractLines(pdf);const blob=lines.join(" ");
-      const hit=data.accounts.find(a=>a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\\b`).test(blob));if(hit)setAId(hit.id);
+      const prof=detectStatementProfile(lines);setProfile(prof);
+      const hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
       let parsed;
       try{parsed=parseStatement(lines,data.accounts,data.recurring);}
-      catch(e){if(e.scanned){setErr("Scanned/image PDF detected — no text found.\n\nFor HDFC: NetBanking → Account Statement by Email (choose e-Statement).\nFor SBI: YONO app → eStatements.\nFor others: look for 'Download Statement' not 'Print Statement'.");setStep("pick");return;}throw e;}
+      catch(e){if(e.scanned){setErr("Scanned/image PDF detected — no text found.\n\nUse a digital e-statement PDF downloaded from netbanking/app, not a scanned/printed PDF.");setStep("pick");return;}throw e;}
       if(!parsed.length){setErr("No transactions found. Use a digital e-statement from netbanking.");setStep("pick");return;}
-      const withXfer=parsed.map(r=>r.isXfer?{...r,type:"transfer"}:r);setRows(withXfer);
-      const targetAcc=hit?.id||accId;const hasExisting=data.transactions.some(t=>t.accountId===targetAcc);
+      const targetAcc=hit?.id||accId;
+      const existingKeys=new Set(data.transactions.map(t=>importDupKey(t.accountId,{...t,desc:t.note})));
+      const withXfer=parsed.map(r=>{const type=r.isXfer?"transfer":r.type;const row={...r,type,category:type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.subcategory||firstSub(mainCategory(r.category),type),duplicate:existingKeys.has(importDupKey(targetAcc,{...r,type}))};return {...row,include:!row.duplicate,confidence:rowConfidence(row)};});
+      setRows(withXfer);setSummary(summarizeImportRows(withXfer));
+      const hasExisting=data.transactions.some(t=>t.accountId===targetAcc);
       if(!hasExisting&&withXfer.length>0){const sorted=[...withXfer].sort((a,b)=>a.date.localeCompare(b.date));setCOD(prevDay(sorted[0].date));setSC(true);setStep("carryover");}
       else setStep("review");
     }catch(e){setErr(e.message||"Could not read PDF.");setStep("pick");}};
 
   const doImport=()=>{
-    const ex=new Set(data.transactions.map(t=>`${t.accountId}|${t.date}|${(+t.amount).toFixed(2)}|${t.type}`));
+    const ex=new Set(data.transactions.map(t=>importDupKey(t.accountId,{...t,desc:t.note})));
     const fresh=[],skip=[];
-    if(showCarryover&&carryoverAmt&&+carryoverAmt>0)fresh.push({id:uid(),type:"income",amount:+carryoverAmt,category:"Other",accountId:accId,date:carryoverDate,note:"Opening balance carryover",source:"carryover"});
-    rows.filter(r=>r.include).forEach(r=>{const k=`${accId}|${r.date}|${r.amount.toFixed(2)}|${r.type}`;if(ex.has(k)){skip.push(r);return;}ex.add(k);fresh.push({id:uid(),type:r.type,amount:r.amount,category:r.type==="transfer"?"Transfer":r.category,accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"import",recurring:!!r.recurMatch});});
+    if(showCarryover&&carryoverAmt&&+carryoverAmt>0)fresh.push({id:uid(),type:"income",amount:+carryoverAmt,category:"Other Income",subcategory:"Adjustment",accountId:accId,date:carryoverDate,note:"Opening balance carryover",source:"carryover"});
+    rows.filter(r=>r.include).forEach(r=>{const k=importDupKey(accId,r);if(ex.has(k)){skip.push(r);return;}ex.add(k);fresh.push({id:uid(),type:r.type,amount:r.amount,category:r.type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.type==="transfer"?"":(r.subcategory||firstSub(r.category,r.type)),accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"import",recurring:!!r.recurMatch});});
     importBatch(fresh);setSkipped(skip);setRes({added:fresh.length-(showCarryover&&carryoverAmt&&+carryoverAmt>0?1:0),skipped:skip.length,carryover:showCarryover&&+carryoverAmt>0});setStep("done");
   };
   const toggle=k=>setRows(rows.map(r=>r.key===k?{...r,include:!r.include}:r));
-  const setType=k=>t=>setRows(rows.map(r=>r.key===k?{...r,type:t}:r));
-  const setCat=k=>c=>setRows(rows.map(r=>r.key===k?{...r,category:c}:r));
-  const setXferTo=k=>id=>setRows(rows.map(r=>r.key===k?{...r,xferToId:id}:r));
+  const setType=k=>t=>setRows(rows.map(r=>{if(r.key!==k)return r;const nr={...r,type:t,category:t==="transfer"?"Transfer":(t==="income"?"Salary":"Other")};return {...nr,confidence:rowConfidence(nr)};}));
+  const setCat=k=>c=>setRows(rows.map(r=>{if(r.key!==k)return r;const nr={...r,category:c,subcategory:firstSub(c,r.type)};return {...nr,confidence:rowConfidence(nr)};}));
+  const setXferTo=k=>id=>setRows(rows.map(r=>{if(r.key!==k)return r;const nr={...r,xferToId:id};return {...nr,confidence:rowConfidence(nr)};}));
   const included=rows.filter(r=>r.include).length;
 
   return(<Sheet close={close} title="Import Statement">
     {step==="pick"&&<>
       <p style={{fontSize:13,color:C.muted,marginTop:0}}>Pick a bank e-statement PDF. Parsed on your device — nothing uploaded.</p>
-      <L>PDF file</L><input type="file" accept="application/pdf" style={{...F,padding:8}} onChange={e=>{setFile(e.target.files[0]||null);setErr("");}}/>
-      {needPwd&&<><L>PDF password</L><input style={F} type="password" value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="HDFC: first 4 letters of name + DOB in DDMM (e.g. ARPA0408)"/><p style={{fontSize:11,color:C.muted,marginTop:-8}}>HDFC: name (4 letters) + DDMM of date of birth · SBI: account number + DOB · Kotak: 4-digit PIN</p></>}
+      <L>PDF file</L><input type="file" accept="application/pdf" style={{...F,padding:8}} onChange={e=>{const f=e.target.files[0]||null;setFile(f);setErr("");if(f&&!pwd){const g=guessPdfPasswordFromName(f.name);if(g)setPwd(g);}}}/>
+      {needPwd&&<><L>PDF password</L><input style={F} type="password" value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="HDFC: first 4 letters of name + DOB in DDMM (e.g. ARPA0408)"/><p style={{fontSize:11,color:C.muted,marginTop:-8}}>You may paste the statement password here. For your test files, the password can be kept in the filename and will be auto-filled locally.</p></>}
       <L>Import into account</L><select style={F} value={accId} onChange={e=>setAId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}{a.hint?` ··${a.hint}`:""}</option>)}</select>
       {err&&<p style={{fontSize:13,color:C.expense,fontWeight:500,whiteSpace:"pre-wrap"}}>{err}</p>}
       <button onClick={parse} disabled={!file} style={{...SB,background:file?C.brand:"#ccc",cursor:file?"pointer":"default"}}>Read Statement</button>
@@ -1564,7 +1602,19 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       </div>
     </>}
     {step==="review"&&<>
-      <p style={{fontSize:13,color:C.muted,marginTop:0}}>Found <b style={{color:C.ink}}>{rows.length}</b> transactions. 🔁 = recurring match · ⚡ = likely transfer.</p>
+      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:14,padding:12,marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:900,color:C.ink,marginBottom:6}}>Statement check</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:11,color:C.muted}}>
+          <div><b style={{color:C.ink}}>Bank:</b> {profile?.bank||"Detected"}</div>
+          <div><b style={{color:C.ink}}>Rows:</b> {summary?.count||rows.length}</div>
+          <div><b style={{color:C.ink}}>Debits:</b> {inr(summary?.debit||0)}</div>
+          <div><b style={{color:C.ink}}>Credits:</b> {inr(summary?.credit||0)}</div>
+          <div><b style={{color:C.ink}}>Duplicates:</b> {summary?.duplicates||0}</div>
+          <div><b style={{color:C.ink}}>Review:</b> {summary?.review||0}</div>
+        </div>
+        {profile?.period&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Period: {profile.period}</div>}
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check blue “Review transfer” rows before import. Duplicate rows are unticked automatically.</div>
+      </div>
       <L>Account</L><select style={F} value={accId} onChange={e=>setAId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
       <div style={{display:"grid",gap:8,maxHeight:"44vh",overflowY:"auto"}}>
         {rows.map(r=>(<div key={r.key} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",opacity:r.include?1:0.4}}>
@@ -1574,8 +1624,9 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
               <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.recurMatch&&<span style={{color:C.brand}}>🔁 </span>}{r.isXfer&&!r.recurMatch&&<span style={{color:C.xfer}}>⚡ </span>}{r.desc||"(no description)"}{r.recurMatch&&<span style={{fontSize:10,color:C.brand}}> · "{r.recurMatch.name}"</span>}</div>
               <div style={{fontSize:10,color:C.muted}}>{new Date(r.date).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div>
             </div>
-            <span style={{fontFamily:"Georgia,serif",fontSize:13,fontWeight:700,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense,flexShrink:0}}>{r.type==="income"?"+":r.type==="transfer"?"↔":"−"}{inr(r.amount)}</span>
+            <span style={{fontFamily:"Inter,system-ui,sans-serif",fontSize:13,fontWeight:900,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense,flexShrink:0}}>{r.type==="income"?"+":r.type==="transfer"?"↔":"−"}{inr(r.amount)}</span>
           </div>
+          {r.confidence&&<div style={{display:"inline-flex",alignItems:"center",marginTop:7,padding:"3px 8px",borderRadius:999,background:r.confidence.bg,color:r.confidence.tone,fontSize:10,fontWeight:900}}>{r.confidence.label}</div>}
           {r.include&&<div style={{display:"grid",gap:4,marginTop:8}}>
             <div style={{display:"flex",gap:6}}>
               <select value={r.type} onChange={e=>setType(r.key)(e.target.value)} style={{...F,marginBottom:0,padding:"5px 8px",fontSize:11,flex:1}}><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
