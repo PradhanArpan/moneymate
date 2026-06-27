@@ -329,7 +329,7 @@ function Main({data,persist,pin}){
 
   const expCats=[...EXPENSE_CATS,...data.customCats.expense];
   const incCats=[...INCOME_CATS,...data.customCats.income];
-  const bankAccounts=data.accounts.filter(a=>BANK_TYPES.includes(a.type));
+  const bankAccounts=data.accounts.filter(a=>BANK_TYPES.includes(a.type)||a.type==="Savings");
   const cashAccount=data.accounts.find(a=>a.type==="Cash");
 
   const balances=useMemo(()=>{
@@ -502,9 +502,9 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function AccountsTab({data,balances,netWorth,delAcc,setModal}){
   const[section,setSection]=useState("accounts");
-  const regularTypes=["Bank","UPI / Wallet","Cash","Card"];
+  const regularTypes=["Bank","UPI / Wallet","Cash","Savings"];
   const debtTypes=["Loan","Credit Card"];
-  const savingsTypes=["Savings","Mutual Fund","Insurance"];
+  const savingsTypes=["Mutual Fund","Insurance"];
   const regularRows=data.accounts.filter(a=>regularTypes.includes(a.type)||(!debtTypes.includes(a.type)&&!savingsTypes.includes(a.type)));
   const debtRows=data.accounts.filter(a=>debtTypes.includes(a.type));
   const savingsRows=data.accounts.filter(a=>savingsTypes.includes(a.type));
@@ -648,7 +648,7 @@ function GoalsTab({data,balances,bankAccounts,delGoal,editGoal,setModal}){
     return(<div style={{padding:"52px 16px 0"}}>
       <button onClick={()=>setDetail(null)} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.brand,fontSize:14,fontWeight:600,cursor:"pointer",marginBottom:16,padding:0}}><ArrowLeft size={18}/> Back</button>
       <div style={{background:"linear-gradient(160deg,#0D1B2A,#0B3D2E)",borderRadius:16,padding:20,marginBottom:16,color:"#fff"}}>
-        <div style={{fontSize:11,color:"#6B9A8A",textTransform:"uppercase"}}>{g.linkType==="account"?"Bank Goal":g.linkType==="investment"?g.investmentType:"Savings Goal"}</div>
+        <div style={{fontSize:11,color:"#6B9A8A",textTransform:"uppercase"}}>{g.linkType==="account"?"Linked Account Goal":g.linkType==="investment"?g.investmentType:"Savings Goal"}</div>
         <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,margin:"6px 0"}}>{g.name}</div>
         <div style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:700,color:done?C.brand:C.gold}}>{inr(saved)}</div>
         <div style={{fontSize:12,color:"#6B9A8A"}}>of {inr(g.target)} target{g.targetDate?` · by ${new Date(g.targetDate).toLocaleDateString("en-IN",{month:"short",year:"numeric"})}`:""}</div>
@@ -917,17 +917,16 @@ function EditTxnModal({close,txn,data,editTxn,addRec,expCats,incCats}){
 
 function AccountPickerModal({close,setModal}){
   const groups=[
-    {title:"Regular",sub:"Cash, Card",items:[
+    {title:"Regular",sub:"Cash, Savings",items:[
       {label:"Cash",desc:"Physical cash or wallet balance",go:()=>setModal("account",{title:"Add Cash",presetType:"Cash"})},
-      {label:"Card",desc:"Debit card / regular bank card",go:()=>setModal("account",{title:"Add Card",presetType:"Card"})},
+      {label:"Savings",desc:"Savings account or bank deposit",go:()=>setModal("account",{title:"Add Savings",presetType:"Savings"})},
     ]},
     {title:"Debt",sub:"Credit, Loan, Mortgage",items:[
       {label:"Credit",desc:"Credit card outstanding",go:()=>setModal("credit")},
       {label:"Loan",desc:"Personal, car, education or other loan",go:()=>setModal("loan",{title:"Add Loan",presetLoanType:"Personal Loan"})},
       {label:"Mortgage",desc:"Home loan / housing mortgage",go:()=>setModal("loan",{title:"Add Mortgage",presetLoanType:"Home Loan"})},
     ]},
-    {title:"Savings",sub:"Savings, Mutual Fund, Insurance, Goals",items:[
-      {label:"Savings",desc:"Savings account or deposit",go:()=>setModal("account",{title:"Add Savings",presetType:"Savings"})},
+    {title:"Savings",sub:"Mutual Fund, Insurance, Goals",items:[
       {label:"Mutual Fund",desc:"Track investment value",go:()=>setModal("account",{title:"Add Mutual Fund",presetType:"Mutual Fund"})},
       {label:"Insurance",desc:"Policy / insurance value",go:()=>setModal("account",{title:"Add Insurance",presetType:"Insurance"})},
       {label:"Goals",desc:"Create a savings goal",go:()=>setModal("goal")},
@@ -945,7 +944,7 @@ function AccountPickerModal({close,setModal}){
 }
 
 function AccountModal({close,addAcc,presetType,title}){
-  const allTypes=[...BANK_TYPES,"Card","Savings","Mutual Fund","Insurance"];
+  const allTypes=[...BANK_TYPES,"Savings","Mutual Fund","Insurance"];
   const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",hint:""});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title={title||"New Account"}>
     <L>Name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. HDFC Savings"/>
@@ -1058,10 +1057,10 @@ function GoalModal({close,addGoal,bankAccounts}){
     <p style={{fontSize:12,color:C.muted,marginTop:-8}}>App will calculate how much to save monthly to reach it on time.</p>
     <L>Type</L>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
-      {[["none","🪙 Manual"],["account","🏦 Bank"],["investment","📈 Invest"]].map(([v,l])=><button key={v} onClick={()=>setLt(v)} style={{padding:"10px 4px",borderRadius:10,border:`1px solid ${lt===v?C.brand:C.border}`,background:lt===v?C.brandDim:"#fff",color:lt===v?C.brand:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",textAlign:"center"}}>{l}</button>)}
+      {[["none","🪙 Manual"],["account","🏦 Account"],["investment","📈 Invest"]].map(([v,l])=><button key={v} onClick={()=>setLt(v)} style={{padding:"10px 4px",borderRadius:10,border:`1px solid ${lt===v?C.brand:C.border}`,background:lt===v?C.brandDim:"#fff",color:lt===v?C.brand:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",textAlign:"center"}}>{l}</button>)}
     </div>
     {lt==="none"&&<><L>Already saved (₹)</L><input style={F} type="number" value={saved} onChange={e=>setSaved(e.target.value)} placeholder="0"/></>}
-    {lt==="account"&&(bankAccounts.length>0?<><L>Bank account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{bankAccounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>:<p style={{color:C.expense,fontSize:13}}>No bank accounts found.</p>)}
+    {lt==="account"&&(bankAccounts.length>0?<><L>Linked account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{bankAccounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>:<p style={{color:C.expense,fontSize:13}}>No bank accounts found.</p>)}
     {lt==="investment"&&<><L>Type</L><select style={F} value={iType} onChange={e=>setIType(e.target.value)}>{INVEST_TYPES.map(t=><option key={t}>{t}</option>)}</select><L>Current value (₹)</L><input style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)} placeholder="0"/></>}
     <button onClick={go} style={SB}>Save Goal</button>
   </Sheet>);
