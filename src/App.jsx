@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v6.5 Master Categories + Subcategories
+   MONEYMATE  ·  Smart Money Tracker  ·  v6.6 Category Pie Fix
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -619,6 +619,7 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const visible=buildCategoryWheel(rows,expCats);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
+  const pieData=rows.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),raw:r.name,value:r.value}));
   const top=visible.slice(0,4), side=visible.slice(4,8), bottom=visible.slice(8,12);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:58}}>
     <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
@@ -632,14 +633,7 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
         <div style={{position:"absolute",right:"1%",top:"10%"}}>{side[2]&&<CategoryBubble tiny row={side[2]} index={6} side onClick={()=>setModal("quickadd",{cat:side[2].name,kind:"expense"})}/>}</div>
         <div style={{position:"absolute",right:"4%",bottom:"8%"}}>{side[3]&&<CategoryBubble tiny row={side[3]} index={7} side onClick={()=>setModal("quickadd",{cat:side[3].name,kind:"expense"})}/>}</div>
         <div style={{position:"absolute",left:"50%",top:"52%",transform:"translate(-50%,-50%)"}}>
-          <div style={CenterRing}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:16,fontWeight:850,marginBottom:5}}>Expenses</div>
-              <div style={{fontSize:22,color:C.expense,fontWeight:950,lineHeight:1.12}}>{inr(expense)}</div>
-              <div style={{fontSize:15,color:C.income,marginTop:3,fontWeight:850}}>{inr(income)}</div>
-              <div style={{fontSize:10,color:C.muted,marginTop:4,fontWeight:800,textTransform:"uppercase"}}>{period.kind||"month"}</div>
-            </div>
-          </div>
+          <SpendingDonut data={pieData} expense={expense} income={income} period={period}/>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:2,alignItems:"start",height:82,flexShrink:0}}>
@@ -851,8 +845,21 @@ function FinanceSummary({assets,debts,netWorth}){return <div style={{background:
 </div>}
 function catLabel(n){return mainCategory(n)||n;}
 function txnSubLabel(t){return t?.subcategory?` · ${t.subcategory}`:"";}
-function categoryRows(txns,cats){const m={};txns.filter(t=>t.type==="expense").forEach(t=>{const k=mainCategory(t.category);m[k]=(m[k]||0)+(+t.amount);});return cats.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||cats.indexOf(a.name)-cats.indexOf(b.name));}
-function buildCategoryWheel(rows,cats){const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];const by=new Map(rows.map(r=>[r.name,r]));return wanted.map(n=>by.get(n)||{name:n,value:0}).filter((r,i,a)=>cats.includes(r.name)&&a.findIndex(x=>x.name===r.name)===i).slice(0,12);}
+function categoryRows(txns,cats){
+  const order=[...new Set(cats.map(mainCategory))];
+  const m={};
+  txns.filter(t=>t.type==="expense").forEach(t=>{const k=mainCategory(t.category||"Other");m[k]=(m[k]||0)+(+t.amount||0);if(!order.includes(k))order.push(k);});
+  return order.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||order.indexOf(a.name)-order.indexOf(b.name));
+}
+function buildCategoryWheel(rows,cats){
+  const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];
+  const by=new Map(rows.map(r=>[r.name,r]));
+  const spent=rows.filter(r=>r.value>0).map(r=>r.name);
+  const order=[...spent,...wanted,...cats.map(mainCategory)];
+  const seen=new Set(),out=[];
+  for(const n of order){if(!n||seen.has(n))continue;seen.add(n);out.push(by.get(n)||{name:n,value:0});if(out.length>=12)break;}
+  return out;
+}
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
 function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
   <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
@@ -861,8 +868,32 @@ function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false
   <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
 </button>)}
 function BudgetCategoryCarousel({rows,onBudget}){const items=[...rows,{name:"More",value:0,more:true}];const doubled=[...items,...items];return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:76,flex:"0 0 76px"}}><div style={{fontSize:12,fontWeight:850,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:48,height:48,background:"#EFEDEF",fontSize:30,color:C.muted}}>＋</div><div style={{fontSize:12,color:C.muted,fontWeight:900}}>{inr(0)}</div></button>:<div key={`${r.name}-${i}`} style={{width:76,flex:"0 0 76px"}}><CategoryBubble row={r} index={i} compact onClick={onBudget}/></div>)}</div></div>}
+
+function SpendingDonut({data,expense,income,period}){
+  const hasData=data.length>0&&expense>0;
+  return <div style={CenterRing}>
+    {hasData&&<div style={{position:"absolute",inset:0}}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="74%" outerRadius="94%" startAngle={90} endAngle={-270} paddingAngle={2} stroke="none">
+            {data.map((_,i)=><Cell key={i} fill={C.charts[i%C.charts.length]}/>) }
+          </Pie>
+          <Tooltip formatter={(v)=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
+        </PieChart>
+      </ResponsiveContainer>
+    </div>}
+    {!hasData&&<div style={{position:"absolute",inset:8,borderRadius:"50%",border:"12px solid #DED9E8"}}/>}
+    <div style={{textAlign:"center",position:"relative",zIndex:1,pointerEvents:"none",maxWidth:112}}>
+      <div style={{fontSize:14,fontWeight:850,marginBottom:4}}>Expenses</div>
+      <div style={{fontSize:20,color:C.expense,fontWeight:950,lineHeight:1.08}}>{inr(expense)}</div>
+      <div style={{fontSize:13,color:C.income,marginTop:2,fontWeight:850}}>{inr(income)}</div>
+      <div style={{fontSize:9.5,color:C.muted,marginTop:3,fontWeight:800,textTransform:"uppercase"}}>{period.kind||"month"}</div>
+    </div>
+  </div>
+}
+
 function CatIcon({name,index=0}){const color=C.charts[index%C.charts.length],cat=mainCategory(name);return <div style={{width:38,height:38,borderRadius:"50%",background:`linear-gradient(135deg,${color}22,#FFFFFFAA)`,display:"grid",placeItems:"center",fontSize:20,flexShrink:0,border:`1px solid ${color}18`}}>{CAT_EMOJI[cat]||"📌"}</div>}
-const CenterRing={width:"clamp(132px,40vw,154px)",height:"clamp(132px,40vw,154px)",borderRadius:"50%",border:"13px solid #D8D4DE",display:"grid",placeItems:"center",margin:"0 auto",background:"rgba(255,255,255,.18)",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.45)"};
+const CenterRing={width:"clamp(140px,42vw,166px)",height:"clamp(140px,42vw,166px)",borderRadius:"50%",position:"relative",display:"grid",placeItems:"center",margin:"0 auto",background:"rgba(255,255,255,.26)",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.45),0 10px 28px rgba(32,33,44,.08)",overflow:"hidden"};
 function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:18,bottom:74,width:56,height:56,borderRadius:20,border:"none",background:"linear-gradient(135deg,#E8E2FF,#DAD2FF)",color:"#0D1B62",fontSize:35,lineHeight:1,boxShadow:"0 12px 28px rgba(108,92,231,.26)",zIndex:14,cursor:"pointer"}}>+</button>}
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:16,padding:"12px 8px",textAlign:"center"}}><div style={{fontSize:13,color:"#55565F"}}>{label}</div><div style={{fontSize:16,color:C.muted,marginTop:4}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
