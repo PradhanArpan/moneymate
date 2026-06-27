@@ -43,18 +43,24 @@ const CAT_EMOJI = {
 
 const LOGO_CHOICES = [
   {key:"auto", label:"Auto", mark:"AUTO", icon:"✨", bg:"#EEE9FF", fg:"#6C5CE7"},
-  {key:"sib", label:"South Indian Bank", mark:"SIB", icon:"🏦", bg:"#F7E7D0", fg:"#8A5A00"},
-  {key:"hdfc", label:"HDFC Bank", mark:"HDFC", icon:"🏦", bg:"#E7EEFF", fg:"#2448A8"},
-  {key:"sbi", label:"State Bank of India", mark:"SBI", icon:"🏦", bg:"#E5F4FF", fg:"#1379B8"},
-  {key:"kotak", label:"Kotak Bank", mark:"KOTAK", icon:"🏦", bg:"#EAF0FF", fg:"#1D4ED8"},
-  {key:"icici", label:"ICICI Bank", mark:"ICICI", icon:"🏦", bg:"#FFF0DF", fg:"#B45309"},
+  {key:"hdfc", label:"HDFC Bank", img:"/logos/hdfc.png", bg:"#FFFFFF", fg:"#005BAA"},
+  {key:"lic", label:"LIC", img:"/logos/lic.png", bg:"#FFFFFF", fg:"#153A7A"},
+  {key:"sib", label:"South Indian Bank", img:"/logos/sib.png", bg:"#FFFFFF", fg:"#B00000"},
+  {key:"indmoney", label:"INDmoney", img:"/logos/indmoney.jpg", bg:"#15161A", fg:"#FFFFFF"},
+  {key:"icici", label:"ICICI Bank", img:"/logos/icici.png", bg:"#FFFFFF", fg:"#B45309"},
+  {key:"cred", label:"CRED", img:"/logos/cred.png", bg:"#111111", fg:"#FFFFFF"},
+  {key:"onecard", label:"OneCard", img:"/logos/onecard.png", bg:"#FFFFFF", fg:"#111111"},
+  {key:"rbl", label:"RBL Bank", img:"/logos/rbl.png", bg:"#FFFFFF", fg:"#28358C"},
+  {key:"amazonpay", label:"Amazon Pay", img:"/logos/amazonpay.png", bg:"#FFFFFF", fg:"#263642"},
+  {key:"rbi", label:"RBI", img:"/logos/rbi.png", bg:"#FFFFFF", fg:"#143B63"},
+  {key:"kotak", label:"Kotak Bank", img:"/logos/kotak.png", bg:"#FFFFFF", fg:"#0A4A88"},
+  {key:"sbi", label:"SBI", img:"/logos/sbi.png", bg:"#FFFFFF", fg:"#00A9E0"},
   {key:"axis", label:"Axis Bank", mark:"AXIS", icon:"🏦", bg:"#FCE7F3", fg:"#9D174D"},
   {key:"cash", label:"Cash", mark:"CASH", icon:"👛", bg:"#E7F8F5", fg:"#0F9B8E"},
   {key:"upi", label:"UPI / Wallet", mark:"UPI", icon:"📱", bg:"#EEF2FF", fg:"#4F46E5"},
   {key:"card", label:"Credit Card", mark:"CARD", icon:"💳", bg:"#EEE9FF", fg:"#6C5CE7"},
   {key:"loan", label:"Loan", mark:"LOAN", icon:"🏦", bg:"#FFE8EE", fg:"#E94D6A"},
   {key:"mortgage", label:"Mortgage / Home Loan", mark:"HOME", icon:"🏠", bg:"#FFE8EE", fg:"#E94D6A"},
-  {key:"lic", label:"LIC / Insurance", mark:"LIC", icon:"🛡️", bg:"#E8F7FF", fg:"#0E7490"},
   {key:"mf", label:"Mutual Fund", mark:"MF", icon:"📈", bg:"#E9FBEF", fg:"#15803D"},
   {key:"goal", label:"Goal", mark:"GOAL", icon:"🎯", bg:"#FFF3D6", fg:"#D97706"},
 ];
@@ -68,23 +74,38 @@ function autoLogoKey(a={}){
   if(n.includes("sbi")||n.includes("state bank"))return "sbi";
   if(n.includes("kotak"))return "kotak";
   if(n.includes("icici"))return "icici";
+  if(n.includes("lic")||n.includes("insurance"))return "lic";
+  if(n.includes("indmoney")||n.includes("ind money"))return "indmoney";
+  if(n.includes("cred"))return "cred";
+  if(n.includes("onecard")||n.includes("one card")||n.includes("1card")||n.includes("1 card"))return "onecard";
+  if(n.includes("rbl"))return "rbl";
+  if(n.includes("amazon"))return "amazonpay";
+  if(n.includes("rbi")||n.includes("reserve bank"))return "rbi";
   if(n.includes("axis"))return "axis";
   if(t.includes("cash"))return "cash";
   if(t.includes("upi")||t.includes("wallet"))return "upi";
   if(t.includes("credit"))return "card";
   if(t.includes("loan")&&lt.includes("home"))return "mortgage";
-  if(t.includes("loan"))return "loan";
+  if(t.includes("loan")||t.includes("mortgage"))return "loan";
   if(t.includes("insurance"))return "lic";
   if(t.includes("mutual"))return "mf";
   if(t.includes("goal")||a._goal)return "goal";
   return "auto";
 }
 function logoChoice(a={}){const key=a.logoKey&&a.logoKey!=="auto"?a.logoKey:autoLogoKey(a);return LOGO_MAP[key]||LOGO_MAP.auto;}
-function LogoBadge({entity,size=56,tall=false}){
+function LogoBadge({entity,size=72,tall=false}){
   const l=logoChoice(entity);
+  const width=Math.max(72,Math.round(size*1.18));
+  const minH=tall?Math.max(90,Math.round(size*1.28)):size;
+  const hasImg=!!l.img;
+  if(hasImg){
+    return <div style={{width,minHeight:minH,height:tall?"auto":size,borderRadius:18,background:l.bg||"#fff",display:"flex",alignItems:"center",justifyContent:"center",padding:7,flexShrink:0,alignSelf:tall?"stretch":"center",boxShadow:"inset 0 0 0 1px rgba(34,35,56,.08),0 4px 12px rgba(34,35,56,.04)",overflow:"hidden"}}>
+      <img src={l.img} alt={l.label} style={{width:"100%",height:"100%",maxWidth:"100%",maxHeight:tall?76:size-14,objectFit:"contain",display:"block"}}/>
+    </div>;
+  }
   const mark=l.mark&&l.mark.length<=4?l.mark:l.icon;
-  return <div style={{width:size,minHeight:tall?86:size,height:tall?"auto":size,borderRadius:Math.max(14,Math.round(size*.26)),background:l.bg,color:l.fg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,flexShrink:0,alignSelf:tall?"stretch":"center",boxShadow:"inset 0 0 0 1px rgba(34,35,56,.06)"}}>
-    <div style={{fontSize:size>=66?22:18,lineHeight:1}}>{l.icon}</div>
+  return <div style={{width,minHeight:minH,height:tall?"auto":size,borderRadius:18,background:l.bg,color:l.fg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,flexShrink:0,alignSelf:tall?"stretch":"center",boxShadow:"inset 0 0 0 1px rgba(34,35,56,.06)"}}>
+    <div style={{fontSize:size>=66?24:18,lineHeight:1}}>{l.icon}</div>
     <div style={{fontSize:size>=66?11:9,fontWeight:950,letterSpacing:.2,lineHeight:1,whiteSpace:"nowrap"}}>{mark}</div>
   </div>;
 }
@@ -93,9 +114,9 @@ function LogoSelector({value,onChange,types=[]}){
   return <div style={{marginBottom:12}}>
     <L>Logo</L>
     <div style={{display:"flex",gap:8,overflowX:"auto",padding:"2px 0 8px",WebkitOverflowScrolling:"touch"}}>
-      {picks.map(l=><button key={l.key} type="button" onClick={()=>onChange(l.key)} style={{border:`2px solid ${value===l.key||(!value&&l.key==="auto")?C.brand:"transparent"}`,background:value===l.key||(!value&&l.key==="auto")?C.brandDim:C.card,borderRadius:14,padding:6,minWidth:66,cursor:"pointer",boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
-        <LogoBadge entity={{logoKey:l.key,name:l.label,type:types[0]||""}} size={42}/>
-        <div style={{fontSize:9,fontWeight:800,color:C.muted,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:52}}>{l.label.split(" ")[0]}</div>
+      {picks.map(l=><button key={l.key} type="button" onClick={()=>onChange(l.key)} style={{border:`2px solid ${value===l.key||(!value&&l.key==="auto")?C.brand:"transparent"}`,background:value===l.key||(!value&&l.key==="auto")?C.brandDim:C.card,borderRadius:14,padding:6,minWidth:78,cursor:"pointer",boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+        <LogoBadge entity={{logoKey:l.key,name:l.label,type:types[0]||""}} size={46}/>
+        <div style={{fontSize:9,fontWeight:800,color:C.muted,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:64}}>{l.label}</div>
       </button>)}
     </div>
   </div>
@@ -656,7 +677,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
           </div>
           <div style={{display:"grid",gap:12}}>
             {accountRows.map((a,i)=><button key={a.id} onClick={()=>a._goal?setModal("editgoal",{goal:a._goal}):setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={{...AccountRow,alignItems:(a._goal||a.type==="Loan")?"flex-start":"center"}}>
-              <LogoBadge entity={a} size={(a._goal||a.type==="Loan")?72:56} tall={a._goal||a.type==="Loan"}/>
+              <LogoBadge entity={a} size={72} tall={a._goal||a.type==="Loan"}/>
               <div style={{flex:1,textAlign:"left",minWidth:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
                   <div style={{fontSize:15,fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
@@ -800,7 +821,7 @@ const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",bord
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
 function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Planned this month</div>{planned.slice(0,5).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1}}><div style={{fontWeight:700}}>{r.name}</div><div style={{fontSize:13,color:r.status.tone}}>{r.status.label}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={TinyPill}>Paid</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"12px 0 9px",fontSize:16,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap"}}><span style={{marginRight:8}}>{icon}</span>{label}</button>}
-const AccountRow={display:"flex",alignItems:"stretch",gap:12,border:"none",background:"rgba(255,255,255,.34)",padding:"7px 6px",borderRadius:18,cursor:"pointer"};
+const AccountRow={display:"flex",alignItems:"stretch",gap:12,border:"none",background:"rgba(255,255,255,.34)",padding:"9px 8px",borderRadius:18,cursor:"pointer"};
 const AccountSquare={width:52,height:52,borderRadius:14,display:"grid",placeItems:"center",color:"#fff",fontSize:24,flexShrink:0};
 const AddAccountRow={display:"flex",alignItems:"center",gap:13,border:"none",background:"transparent",padding:"18px 0",cursor:"pointer"};
 const DashedPlus={width:52,height:52,borderRadius:14,border:"2px dashed #C9C7D0",display:"grid",placeItems:"center",fontSize:27,color:C.muted,background:"#FAFAFD"};
