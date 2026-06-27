@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v5.5 Mobile fit UI
+   MONEYMATE  ·  Smart Money Tracker  ·  v5.6 Accounts & Finance UI
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -377,9 +377,10 @@ function Main({data,persist,pin}){
       {modal?.type==="edittxn"   &&<EditTxnModal   close={close} txn={modal.txn} data={data} editTxn={editTxn} addRec={addRec} expCats={expCats} incCats={incCats}/>} 
       {modal?.type==="quickadd"  &&<QuickAddModal   close={close} data={data} addTxn={addTxn} cat={modal.cat} kind={modal.kind||"expense"} expCats={expCats} incCats={incCats}/>} 
       {modal?.type==="quickcash" &&<QuickCashModal  close={close} data={data} addTxn={addTxn} expCats={expCats}/>} 
-      {modal?.type==="account"   &&<AccountModal    close={close} addAcc={addAcc}/>} 
+      {modal?.type==="acctpicker"&&<AccountPickerModal close={close} setModal={M}/>} 
+      {modal?.type==="account"   &&<AccountModal    close={close} addAcc={addAcc} presetType={modal.presetType} title={modal.title}/>} 
       {modal?.type==="credit"    &&<CreditCardModal close={close} addAcc={addAcc}/>} 
-      {modal?.type==="loan"      &&<LoanModal       close={close} addAcc={addAcc}/>} 
+      {modal?.type==="loan"      &&<LoanModal       close={close} addAcc={addAcc} presetLoanType={modal.presetLoanType} title={modal.title}/>} 
       {modal?.type==="editacc"   &&<EditAccModal    close={close} account={modal.account} editAcc={editAcc}/>} 
       {modal?.type==="editloan"  &&<EditLoanModal   close={close} account={modal.account} editLoan={editLoan}/>} 
       {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} editCC={editCC}/>} 
@@ -501,24 +502,43 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function AccountsTab({data,balances,netWorth,delAcc,setModal}){
   const[section,setSection]=useState("accounts");
-  const bankAccs=data.accounts.filter(a=>BANK_TYPES.includes(a.type));
-  const financeAccs=data.accounts.filter(a=>a.type==="Loan"||a.type==="Credit Card");
-  const rows=section==="accounts"?bankAccs:financeAccs;
-  return(<div style={Screen}>
-    <MoneyHeader netWorth={netWorth} right={<button onClick={()=>setModal(section==="accounts"?"account":"loan")} style={HeaderIconBtn}><Plus size={36}/></button>} />
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 32px",borderBottom:`1px solid ${C.border}`}}>
-      <TopSwitch active={section==="accounts"} onClick={()=>setSection("accounts")} icon="▣" label="Accounts"/>
-      <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My finances"/>
+  const regularTypes=["Bank","UPI / Wallet","Cash","Card"];
+  const debtTypes=["Loan","Credit Card"];
+  const savingsTypes=["Savings","Mutual Fund","Insurance"];
+  const regularRows=data.accounts.filter(a=>regularTypes.includes(a.type)||(!debtTypes.includes(a.type)&&!savingsTypes.includes(a.type)));
+  const debtRows=data.accounts.filter(a=>debtTypes.includes(a.type));
+  const savingsRows=data.accounts.filter(a=>savingsTypes.includes(a.type));
+  const financeRows=[...savingsRows,...debtRows];
+  const rows=section==="accounts"?regularRows:financeRows;
+  const assetValue=data.accounts.reduce((s,a)=>{
+    const v=balances[a.id]||0;
+    if(debtTypes.includes(a.type))return s;
+    return s+Math.max(0,v);
+  },0);
+  const debtValue=data.accounts.reduce((s,a)=>{
+    if(debtTypes.includes(a.type))return s+Math.abs(balances[a.id]||0);
+    return s;
+  },0);
+  const sectionTotal=rows.reduce((s,a)=>s+(balances[a.id]||0),0);
+  const iconFor=a=>a.type==="Credit Card"?"▤":a.type==="Loan"?"₹":a.type==="Savings"?"◒":a.type==="Mutual Fund"?"◆":a.type==="Insurance"?"▰":a.type==="Cash"?"▣":"▣";
+  return(<div style={{...Screen,height:"100dvh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+    <AccountRibbon netWorth={netWorth} onAdd={()=>setModal("acctpicker")}/>
+    <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 32px"}}>
+        <TopSwitch active={section==="accounts"} onClick={()=>setSection("accounts")} icon="▣" label="Accounts"/>
+        <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My finances"/>
+      </div>
     </div>
-    <div style={{padding:"18px 22px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:26}}><div style={{fontSize:23,fontWeight:800,color:C.brand}}>{section==="accounts"?"Accounts":"My finances"}</div><div style={{fontSize:21,color:C.muted}}>{inr(rows.reduce((s,a)=>s+(balances[a.id]||0),0))}</div></div>
-      <div style={{display:"grid",gap:16}}>
+    <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"16px 22px 88px"}}>
+      {section==="finance"&&<FinanceSummary assets={assetValue} debts={debtValue} netWorth={netWorth}/>} 
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:18}}><div style={{fontSize:20,fontWeight:800,color:C.brand}}>{section==="accounts"?"Accounts":"Finance items"}</div><div style={{fontSize:18,color:C.muted}}>{inr(section==="accounts"?sectionTotal:netWorth)}</div></div>
+      <div style={{display:"grid",gap:14}}>
         {rows.map((a,i)=><button key={a.id} onClick={()=>setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={AccountRow}>
-          <div style={{...AccountSquare,background:i%2?"linear-gradient(135deg,#38B2AC,#0F9D90)":"linear-gradient(135deg,#7A8BE8,#5367C8)"}}>{a.type==="Loan"?"₹":a.type==="Credit Card"?"▤":"▣"}</div>
-          <div style={{flex:1,textAlign:"left"}}><div style={{fontSize:18,fontWeight:500,color:C.ink}}>{a.name}</div><div style={{fontSize:14,color:C.muted,marginTop:2}}>{inr(balances[a.id]||0)}</div></div>
+          <div style={{...AccountSquare,background:i%2?"linear-gradient(135deg,#38B2AC,#0F9D90)":"linear-gradient(135deg,#7A8BE8,#5367C8)"}}>{iconFor(a)}</div>
+          <div style={{flex:1,textAlign:"left",minWidth:0}}><div style={{fontSize:16,fontWeight:600,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div><div style={{fontSize:13,color:C.muted,marginTop:2}}>{a.type} · {inr(balances[a.id]||0)}</div></div>
           <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete account?"))delAcc(a.id);}} style={{...PlainSmall,fontSize:20}}>×</button>
         </button>)}
-        <button onClick={()=>setModal(section==="accounts"?"account":"loan")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:20,color:C.ink}}>Add {section==="accounts"?"account":"finance"}</div></button>
+        <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:18,color:C.ink}}>Add account / finance</div></button>
       </div>
     </div>
   </div>);
@@ -567,6 +587,20 @@ function MoneyHeader({netWorth=0,month,setMonth,right}){return(<div style={{posi
     <button onClick={()=>setMonth(nextMo(month))} style={HeaderArrow}>≫</button>
   </div>}
 </div>)}
+function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",top:0,zIndex:16,background:C.tab,padding:"calc(12px + env(safe-area-inset-top)) 12px 8px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(32,33,44,.04)",flexShrink:0}}>
+  <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
+    <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:18}}>👤</div>
+    <div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:600}}>All Accounts</div><div style={{fontSize:24,fontWeight:700,lineHeight:1.05,marginTop:2}}>{inr(netWorth)}</div></div>
+    <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={34}/></button>
+  </div>
+</div>}
+function FinanceSummary({assets,debts,netWorth}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
+    <div style={{padding:"12px",textAlign:"center",borderRight:`1px solid ${C.border}`}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Assets</div><div style={{fontSize:18,fontWeight:800,color:C.income,marginTop:5}}>{inr(assets)}</div></div>
+    <div style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Debts</div><div style={{fontSize:18,fontWeight:800,color:C.expense,marginTop:5}}>{inr(debts)}</div></div>
+  </div>
+  <div style={{padding:"13px 12px",textAlign:"center",background:C.bg}}><div style={{fontSize:12,fontWeight:700,color:C.muted}}>Overall Amount</div><div style={{fontSize:22,fontWeight:900,color:netWorth>=0?C.income:C.expense,marginTop:4}}>{inr(netWorth)}</div></div>
+</div>}
 function catLabel(n){return {Food:"Restaurant",Entertainment:"Leisure",Other:"Family",Gift:"Gifts",Transport:"Transport",Groceries:"Groceries",Shopping:"Shopping",Health:"Health",Salary:"Salary"}[n]||n;}
 function categoryRows(txns,cats){const m={};txns.filter(t=>t.type==="expense").forEach(t=>{m[t.category]=(m[t.category]||0)+(+t.amount);});return cats.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||cats.indexOf(a.name)-cats.indexOf(b.name));}
 function buildCategoryWheel(rows,cats){const wanted=["Groceries","Food","Entertainment","Transport","Health","Other","Gift","Shopping"];const by=new Map(rows.map(r=>[r.name,r]));return wanted.map((n,i)=>by.get(n)||{name:cats.includes(n)?n:(n==="Gift"?"Other":n),value:0}).filter((r,i,a)=>a.findIndex(x=>x.name===r.name)===i).slice(0,8);}
@@ -881,11 +915,41 @@ function EditTxnModal({close,txn,data,editTxn,addRec,expCats,incCats}){
   </Sheet>);
 }
 
-function AccountModal({close,addAcc}){
-  const[f,setF]=useState({name:"",type:"Bank",opening:"",hint:""});const s=k=>e=>setF({...f,[k]:e.target.value});
-  return(<Sheet close={close} title="New Account">
+function AccountPickerModal({close,setModal}){
+  const groups=[
+    {title:"Regular",sub:"Cash, Card",items:[
+      {label:"Cash",desc:"Physical cash or wallet balance",go:()=>setModal("account",{title:"Add Cash",presetType:"Cash"})},
+      {label:"Card",desc:"Debit card / regular bank card",go:()=>setModal("account",{title:"Add Card",presetType:"Card"})},
+    ]},
+    {title:"Debt",sub:"Credit, Loan, Mortgage",items:[
+      {label:"Credit",desc:"Credit card outstanding",go:()=>setModal("credit")},
+      {label:"Loan",desc:"Personal, car, education or other loan",go:()=>setModal("loan",{title:"Add Loan",presetLoanType:"Personal Loan"})},
+      {label:"Mortgage",desc:"Home loan / housing mortgage",go:()=>setModal("loan",{title:"Add Mortgage",presetLoanType:"Home Loan"})},
+    ]},
+    {title:"Savings",sub:"Savings, Mutual Fund, Insurance, Goals",items:[
+      {label:"Savings",desc:"Savings account or deposit",go:()=>setModal("account",{title:"Add Savings",presetType:"Savings"})},
+      {label:"Mutual Fund",desc:"Track investment value",go:()=>setModal("account",{title:"Add Mutual Fund",presetType:"Mutual Fund"})},
+      {label:"Insurance",desc:"Policy / insurance value",go:()=>setModal("account",{title:"Add Insurance",presetType:"Insurance"})},
+      {label:"Goals",desc:"Create a savings goal",go:()=>setModal("goal")},
+    ]},
+  ];
+  return <Sheet close={close} title="Add new">
+    <div style={{display:"grid",gap:12}}>{groups.map(g=><div key={g.title} style={{border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden",background:C.bg}}>
+      <div style={{padding:"12px 14px",background:C.card}}><div style={{fontSize:17,fontWeight:900,color:C.ink}}>{g.title}</div><div style={{fontSize:12,color:C.muted,marginTop:2}}>{g.sub}</div></div>
+      <div style={{display:"grid"}}>{g.items.map(it=><button key={it.label} onClick={it.go} style={{display:"flex",alignItems:"center",gap:12,border:"none",borderTop:`1px solid ${C.border}`,background:"transparent",padding:"12px 14px",textAlign:"left",cursor:"pointer"}}>
+        <div style={{width:34,height:34,borderRadius:10,background:C.active,display:"grid",placeItems:"center",fontWeight:900,color:C.brand}}>＋</div>
+        <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>{it.label}</div><div style={{fontSize:12,color:C.muted}}>{it.desc}</div></div>
+      </button>)}</div>
+    </div>)}</div>
+  </Sheet>
+}
+
+function AccountModal({close,addAcc,presetType,title}){
+  const allTypes=[...BANK_TYPES,"Card","Savings","Mutual Fund","Insurance"];
+  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",hint:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  return(<Sheet close={close} title={title||"New Account"}>
     <L>Name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. HDFC Savings"/>
-    <L>Type</L><select style={F} value={f.type} onChange={s("type")}>{BANK_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+    <L>Type</L><select style={F} value={f.type} onChange={s("type")}>{allTypes.map(t=><option key={t}>{t}</option>)}</select>
     <L>Current balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/>
     <L>Last 4 digits (for PDF auto-match)</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")} placeholder="e.g. 4821"/>
     <button onClick={()=>{if(!f.name)return;addAcc({name:f.name,type:f.type,opening:+f.opening||0,hint:f.hint.trim()});close();}} style={SB}>Save</button>
@@ -916,9 +980,9 @@ function EditAccModal({close,account,editAcc}){
   </Sheet>);
 }
 
-function LoanModal({close,addAcc}){
-  const[f,setF]=useState({name:"",loanType:LOAN_TYPES[0],sanctioned:"",outstanding:""});const s=k=>e=>setF({...f,[k]:e.target.value});
-  return(<Sheet close={close} title="Add Loan">
+function LoanModal({close,addAcc,presetLoanType,title}){
+  const[f,setF]=useState({name:"",loanType:presetLoanType||LOAN_TYPES[0],sanctioned:"",outstanding:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  return(<Sheet close={close} title={title||"Add Loan"}>
     <L>Loan name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. Home Loan"/>
     <L>Type</L><select style={F} value={f.loanType} onChange={s("loanType")}>{LOAN_TYPES.map(t=><option key={t}>{t}</option>)}</select>
     <L>Sanctioned amount (₹)</L><input style={F} type="number" value={f.sanctioned} onChange={s("sanctioned")} placeholder="780000"/>
