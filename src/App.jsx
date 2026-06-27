@@ -557,20 +557,26 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const[section,setSection]=useState("accounts");
-  const regularTypes=["Bank","UPI / Wallet","Cash","Savings"];
   const debtTypes=["Loan","Credit Card"];
-  const savingsTypes=["Mutual Fund","Insurance"];
-  const goalSaved=g=>{if(g.linkType==="account"&&g.linkedAccountId)return balances[g.linkedAccountId]||0;if(g.linkType==="investment")return g.investmentValue||0;return g.saved||0;};
-  const regularRows=data.accounts.filter(a=>regularTypes.includes(a.type)||(!debtTypes.includes(a.type)&&!savingsTypes.includes(a.type)));
-  const debtRows=data.accounts.filter(a=>debtTypes.includes(a.type));
-  const savingsRows=data.accounts.filter(a=>savingsTypes.includes(a.type));
-  const goalRows=(data.goals||[]).map(g=>({_goal:g,id:`goal-${g.id}`,name:g.name,type:"Goal",value:goalSaved(g),target:g.target}));
-  const financeRows=[...savingsRows,...goalRows,...debtRows];
-  const rows=section==="accounts"?regularRows:financeRows;
+  const goalSaved=g=>{if(g.linkType==="account"&&g.linkedAccountId)return Math.max(0,balances[g.linkedAccountId]||0);if(g.linkType==="investment")return g.investmentValue||0;return g.saved||0;};
+  const goalRows=(data.goals||[]).map(g=>({_goal:g,id:`goal-${g.id}`,name:g.name,type:"Goal",value:goalSaved(g),target:g.target,targetDate:g.targetDate,linkType:g.linkType,linkedAccountId:g.linkedAccountId}));
+  const accountRows=[...data.accounts,...goalRows];
   const assetValue=data.accounts.reduce((s,a)=>{const v=balances[a.id]||0;if(debtTypes.includes(a.type))return s;return s+Math.max(0,v);},0);
   const debtValue=data.accounts.reduce((s,a)=>debtTypes.includes(a.type)?s+Math.abs(balances[a.id]||0):s,0);
-  const sectionTotal=rows.reduce((s,a)=>s+(a._goal?(a.value||0):(balances[a.id]||0)),0);
-  const iconFor=a=>a.type==="Credit Card"?"💳":a.type==="Loan"?"🏦":a.type==="Goal"?"🎯":a.type==="Savings"?"🏛️":a.type==="Mutual Fund"?"📈":a.type==="Insurance"?"🛡️":a.type==="Cash"?"👛":"🏦";
+  const iconFor=a=>a.type==="Credit Card"?"💳":a.type==="Loan"?"🏦":a.type==="Goal"?"🎯":a.type==="Savings"?"🏛️":a.type==="Mutual Fund"?"📈":a.type==="Insurance"?"🛡️":a.type==="Cash"?"👛":a.type==="UPI / Wallet"?"📱":"🏦";
+  const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
+  const accountSub=a=>{
+    if(a._goal){
+      const pct=progressPct(a.value,a.target);
+      return `${a.linkType==="account"?"Linked account goal":a.linkType==="investment"?"Investment goal":"Savings goal"} · ${Math.round(pct)}%`;
+    }
+    if(a.type==="Loan"){
+      const pct=loanPaidPct(a);
+      return `${a.loanType||"Loan"} · ${Math.round(pct)}% repaid`;
+    }
+    if(a.type==="Credit Card")return `${a.ccType||"Credit Card"} · outstanding ${inr(Math.abs(accountValue(a)))}`;
+    return `${a.type}${a.hint?` · ··${a.hint}`:""} · ${inr(accountValue(a))}`;
+  };
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <AccountRibbon netWorth={netWorth} onAdd={()=>setModal("acctpicker")}/>
     <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
@@ -579,19 +585,71 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
         <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My finances"/>
       </div>
     </div>
-    <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"14px 20px 86px"}}>
-      {section==="finance"&&<FinanceSummary assets={assetValue} debts={debtValue} netWorth={netWorth}/>} 
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}><div style={{fontSize:19,fontWeight:900,color:C.brand}}>{section==="accounts"?"Accounts":"My finances"}</div><div style={{fontSize:17,color:C.muted}}>{inr(section==="accounts"?sectionTotal:netWorth)}</div></div>
-      <div style={{display:"grid",gap:12}}>
-        {rows.map((a,i)=><button key={a.id} onClick={()=>a._goal?setModal("editgoal",{goal:a._goal}):setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={AccountRow}>
-          <div style={{...AccountSquare,background:i%2?"linear-gradient(135deg,#22B8A9,#1A9C92)":"linear-gradient(135deg,#8E72FF,#6C5CE7)"}}>{iconFor(a)}</div>
-          <div style={{flex:1,textAlign:"left",minWidth:0}}><div style={{fontSize:15,fontWeight:750,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div><div style={{fontSize:12.5,color:C.muted,marginTop:2}}>{a.type}{a._goal?` · target ${inr(a.target)}`:""} · {inr(a._goal?a.value:(balances[a.id]||0))}</div></div>
-          <button onClick={e=>{e.stopPropagation();if(a._goal){if(window.confirm("Delete goal?"))delGoal(a._goal.id);}else if(window.confirm("Delete account?"))delAcc(a.id);}} style={{...PlainSmall,fontSize:19}}>×</button>
-        </button>)}
-        <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
-      </div>
+    <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"14px 18px 86px"}}>
+      {section==="finance"?(
+        <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth}/>
+      ):(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14}}>
+            <div style={{fontSize:19,fontWeight:900,color:C.brand}}>Accounts</div>
+            <div style={{fontSize:17,color:C.muted}}>{inr(netWorth)}</div>
+          </div>
+          <div style={{display:"grid",gap:12}}>
+            {accountRows.map((a,i)=><button key={a.id} onClick={()=>a._goal?setModal("editgoal",{goal:a._goal}):setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={{...AccountRow,alignItems:(a._goal||a.type==="Loan")?"flex-start":"center"}}>
+              <div style={{...AccountSquare,background:accountGradient(a,i)}}>{iconFor(a)}</div>
+              <div style={{flex:1,textAlign:"left",minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
+                  <div style={{fontSize:15,fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
+                  <div style={{fontSize:14,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0}}>{inr(accountValue(a))}</div>
+                </div>
+                <div style={{fontSize:12.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
+                {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
+                {a._goal&&<GoalFuelMeter goal={a}/>} 
+              </div>
+              <button onClick={e=>{e.stopPropagation();if(a._goal){if(window.confirm("Delete goal?"))delGoal(a._goal.id);}else if(window.confirm("Delete account?"))delAcc(a.id);}} style={{...PlainSmall,fontSize:19,alignSelf:"center"}}>×</button>
+            </button>)}
+            <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
+          </div>
+        </>
+      )}
     </div>
   </div>);
+}
+
+function FinanceOnlyView({assets,debts,netWorth}){
+  return <div style={{paddingTop:2}}>
+    <FinanceSummary assets={assets} debts={debts} netWorth={netWorth}/>
+  </div>;
+}
+function progressPct(value,target){const t=+target||0;if(t<=0)return 0;return Math.max(0,Math.min(100,((+value||0)/t)*100));}
+function loanPaidPct(a){const sanctioned=+a.sanctionedAmount||0;const outstanding=+a.outstandingAmount||Math.abs(+a.opening||0)||0;if(sanctioned<=0)return 0;return Math.max(0,Math.min(100,((sanctioned-outstanding)/sanctioned)*100));}
+function accountGradient(a,i){
+  if(a._goal||a.type==="Goal")return "linear-gradient(135deg,#FFC56D,#FF8A65)";
+  if(a.type==="Loan"||a.type==="Credit Card")return "linear-gradient(135deg,#FF7F96,#E94D6A)";
+  if(a.type==="Mutual Fund"||a.type==="Insurance")return "linear-gradient(135deg,#41D6B1,#13A58E)";
+  return i%2?"linear-gradient(135deg,#22B8A9,#1A9C92)":"linear-gradient(135deg,#8E72FF,#6C5CE7)";
+}
+function FuelMeter({pct=0,tone="goal",left="",right=""}){
+  const p=Math.max(0,Math.min(100,pct));
+  const col=tone==="loan"?"#E94D6A":"#F59E0B";
+  const glow=tone==="loan"?"rgba(233,77,106,.22)":"rgba(245,158,11,.22)";
+  return <div style={{marginTop:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,fontWeight:850,color:C.muted,marginBottom:5}}><span>{left}</span><span>{right}</span></div>
+    <div style={{height:13,borderRadius:999,background:"linear-gradient(90deg,#EEEAF7,#F8F6FC)",position:"relative",overflow:"hidden",border:"1px solid rgba(36,35,50,.08)",boxShadow:"inset 0 1px 3px rgba(0,0,0,.05)"}}>
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${p}%`,borderRadius:999,background:`linear-gradient(90deg,${col}99,${col})`,boxShadow:`0 0 14px ${glow}`}}/>
+      <div style={{position:"absolute",left:`calc(${p}% - 8px)`,top:-3,width:18,height:18,borderRadius:"50%",background:"#fff",border:`4px solid ${col}`,boxShadow:"0 2px 8px rgba(0,0,0,.18)"}}/>
+    </div>
+  </div>;
+}
+function LoanFuelMeter({loan}){
+  const pct=loanPaidPct(loan);
+  const outstanding=+loan.outstandingAmount||0;
+  const sanctioned=+loan.sanctionedAmount||0;
+  return <FuelMeter tone="loan" pct={pct} left={`${Math.round(pct)}% repaid`} right={`${inr(outstanding)} left of ${inr(sanctioned)}`}/>;
+}
+function GoalFuelMeter({goal}){
+  const pct=progressPct(goal.value,goal.target);
+  return <FuelMeter tone="goal" pct={pct} left={`${Math.round(pct)}% reached`} right={`${inr(goal.value)} / ${inr(goal.target)}`}/>;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
