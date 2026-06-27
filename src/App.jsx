@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v6.6 Category Pie Fix
+   MONEYMATE  ·  Smart Money Tracker  ·  v6.8 Subcategory Budgets
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -791,6 +791,10 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
   const currentBudget={...(data.budgets||{}),...((data.budgetOverrides||{})[month]||{})};
   const totalBudget=Object.values(currentBudget).reduce((s,v)=>s+(+v||0),0);
   const rows=categoryRows(txns,expCats);
+  const budgetEntries=Object.entries(currentBudget).sort((a,b)=>{
+    const pa=parseBudgetKey(a[0]), pb=parseBudgetKey(b[0]);
+    return pa.cat.localeCompare(pb.cat)||pa.sub.localeCompare(pb.sub);
+  });
   return(<div style={Screen}>
     <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{padding:"0 0 18px"}}>
@@ -799,8 +803,16 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
       <BudgetBand title="Savings" sub={`deposited ${inr(Math.max(0,inc-exp))}`} amount={inr(Math.max(0,inc-exp))} budget="monthly target ₹0" color="#FFE7D5"/>
       <BudgetBand title="Income" sub={`received ${inr(inc)}`} amount={inr(inc)} budget="monthly estimate ₹0" color="#D4F3EF"/>
       <div style={{padding:"16px 18px",display:"grid",gap:8}}>
-        {Object.keys(currentBudget).length>0&&<div style={{fontSize:14,fontWeight:900,color:C.muted,marginBottom:2}}>Category budgets for {monthLabel(month)}</div>}
-        {Object.entries(currentBudget).map(([cat,amt])=><div key={cat} style={TransactionRow}><CatIcon name={cat}/><div style={{flex:1,fontWeight:800}}>{cat}<div style={{fontSize:11,color:C.muted,fontWeight:700}}>{(data.budgetOverrides||{})[month]?.[cat]!==undefined?"This month override":"Repeats monthly"}</div></div><div style={{fontWeight:900}}>{inr(amt)}</div><button onClick={()=>delBudget(cat,month)} style={PlainSmall}>×</button></div>)}
+        {budgetEntries.length>0&&<div style={{fontSize:14,fontWeight:900,color:C.muted,marginBottom:2}}>Category and subcategory budgets for {monthLabel(month)}</div>}
+        {budgetEntries.map(([key,amt])=>{const p=parseBudgetKey(key);const spent=budgetSpentForKey(txns,key);const over=(+amt||0)>0&&spent>(+amt||0);return <div key={key} style={TransactionRow}>
+          <CatIcon name={p.cat}/>
+          <div style={{flex:1,fontWeight:800,minWidth:0}}>
+            <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{budgetLabel(key)}</div>
+            <div style={{fontSize:11,color:over?C.expense:C.muted,fontWeight:over?900:700}}>{inr(spent)} spent · {(data.budgetOverrides||{})[month]?.[key]!==undefined?"This month override":"Repeats monthly"}</div>
+          </div>
+          <div style={{fontWeight:950,color:over?C.expense:C.ink}}>{inr(amt)}</div>
+          <button onClick={()=>delBudget(key,month)} style={PlainSmall}>×</button>
+        </div>})}
       </div>
     </div>
   </div>);
@@ -851,6 +863,12 @@ function categoryRows(txns,cats){
   txns.filter(t=>t.type==="expense").forEach(t=>{const k=mainCategory(t.category||"Other");m[k]=(m[k]||0)+(+t.amount||0);if(!order.includes(k))order.push(k);});
   return order.map(name=>({name,value:m[name]||0})).sort((a,b)=>b.value-a.value||order.indexOf(a.name)-order.indexOf(b.name));
 }
+function budgetKey(cat,sub=""){const c=mainCategory(cat||"Other");return sub?`${c}::${sub}`:c;}
+function parseBudgetKey(key=""){const [cat,...rest]=String(key).split("::");return {cat:mainCategory(cat||"Other"),sub:rest.join("::")};}
+function budgetLabel(key){const p=parseBudgetKey(key);return p.sub?`${p.cat} · ${p.sub}`:p.cat;}
+function categoryBudgetTotal(budgets={},cat){const c=mainCategory(cat);return Object.entries(budgets).reduce((s,[k,v])=>s+(parseBudgetKey(k).cat===c?(+v||0):0),0);}
+function budgetSpentForKey(txns=[],key=""){const p=parseBudgetKey(key);return txns.filter(t=>t.type==="expense"&&mainCategory(t.category||"Other")===p.cat&&(!p.sub||(t.subcategory||"")===p.sub)).reduce((s,t)=>s+(+t.amount||0),0);}
+function hasSubBudgets(budgets={},cat){const c=mainCategory(cat);return Object.keys(budgets).some(k=>{const p=parseBudgetKey(k);return p.cat===c&&!!p.sub;});}
 function buildCategoryWheel(rows,cats){
   const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe / Offering","EMI / Loan","Work","Other"];
   const by=new Map(rows.map(r=>[r.name,r]));
@@ -867,7 +885,7 @@ function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false
   <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
   <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
 </button>)}
-function BudgetFillBubble({row,index=0,budget=0,onClick}){
+function BudgetFillBubble({row,index=0,budget=0,onClick,hasSub=false}){
   const spent=+row.value||0;
   const target=+budget||0;
   const over=target>0&&spent>target;
@@ -882,14 +900,15 @@ function BudgetFillBubble({row,index=0,budget=0,onClick}){
     </div>
     <div style={{fontSize:12,fontWeight:950,color:spent?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(spent)}</div>
     <div style={{fontSize:10.5,fontWeight:over?950:800,color:over?C.expense:C.muted,whiteSpace:"nowrap"}}>{target?`of ${inr(target)}`:"Set budget"}</div>
+    {hasSub&&<div style={{fontSize:9.5,fontWeight:850,color:C.brand,whiteSpace:"nowrap"}}>sub budgets</div>}
   </button>;
 }
 function BudgetCategoryCarousel({rows,budgets={},onBudget}){
-  const visible=rows.filter(r=>(+r.value||0)>0||(+budgets[r.name]||0)>0);
+  const visible=rows.filter(r=>(+r.value||0)>0||categoryBudgetTotal(budgets,r.name)>0);
   const base=visible.length?visible:rows;
   const items=[...base,{name:"More",value:0,more:true}];
   const doubled=[...items,...items];
-  return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:74,flex:"0 0 74px",padding:0}}><div style={{fontSize:11.5,fontWeight:900,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:52,height:52,background:"rgba(255,255,255,.34)",fontSize:30,color:C.muted,border:"1px solid rgba(33,31,58,.08)"}}>＋</div><div style={{fontSize:10.5,color:C.muted,fontWeight:800}}>Budget</div></button>:<BudgetFillBubble key={`${r.name}-${i}`} row={r} index={i} budget={budgets[r.name]} onClick={onBudget}/>)}</div></div>;
+  return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:74,flex:"0 0 74px",padding:0}}><div style={{fontSize:11.5,fontWeight:900,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:52,height:52,background:"rgba(255,255,255,.34)",fontSize:30,color:C.muted,border:"1px solid rgba(33,31,58,.08)"}}>＋</div><div style={{fontSize:10.5,color:C.muted,fontWeight:800}}>Budget</div></button>:<BudgetFillBubble key={`${r.name}-${i}`} row={r} index={i} budget={categoryBudgetTotal(budgets,r.name)} onClick={onBudget} hasSub={hasSubBudgets(budgets,r.name)}/>)}</div></div>;
 }
 
 function SpendingDonut({data,expense,income,period}){
@@ -1406,15 +1425,25 @@ function EditGoalModal({close,goal,editGoal}){
 }
 
 function BudgetModal({close,setBudget,expCats,month}){
-  const[cat,setCat]=useState(expCats[0]||"Other"), [amt,setAmt]=useState(""), [scope,setScope]=useState("repeat");
+  const[cat,setCat]=useState(expCats[0]||"Other"), [subcat,setSubcat]=useState(""), [amt,setAmt]=useState(""), [scope,setScope]=useState("repeat"), [level,setLevel]=useState("category");
+  const subs=subcatsFor(cat,"expense");
+  useEffect(()=>{if(level==="subcategory"&&!subcat)setSubcat(subs[0]||"");},[level,cat]);
+  const save=()=>{if(!cat||!amt)return;const key=budgetKey(cat,level==="subcategory"?subcat:"");setBudget(key,+amt,{scope,month});close();};
   return(<Sheet close={close} title="Set Budget">
-    <L>Category</L><select style={F} value={cat} onChange={e=>setCat(e.target.value)}>{expCats.map(c=><option key={c}>{c}</option>)}</select>
+    <L>Budget level</L>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+      <button type="button" onClick={()=>setLevel("category")} style={{padding:"10px 8px",borderRadius:12,border:`1px solid ${level==="category"?C.brand:C.border}`,background:level==="category"?C.brandDim:C.card,color:level==="category"?C.brand:C.ink,fontWeight:850,cursor:"pointer"}}>Main category</button>
+      <button type="button" onClick={()=>setLevel("subcategory")} style={{padding:"10px 8px",borderRadius:12,border:`1px solid ${level==="subcategory"?C.brand:C.border}`,background:level==="subcategory"?C.brandDim:C.card,color:level==="subcategory"?C.brand:C.ink,fontWeight:850,cursor:"pointer"}}>Subcategory</button>
+    </div>
+    <L>Category</L><select style={F} value={cat} onChange={e=>{setCat(e.target.value);setSubcat("");}}>{expCats.map(c=><option key={c}>{c}</option>)}</select>
+    {level==="subcategory"&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subs.map(sc=><option key={sc}>{sc}</option>)}</select></>}
     <L>Monthly limit (₹)</L><input style={F} type="number" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="5000"/>
     <L>How to apply</L><select style={F} value={scope} onChange={e=>setScope(e.target.value)}><option value="repeat">Repeat every month</option><option value="thisMonth">Only {monthLabel(month)}</option></select>
-    <div style={{fontSize:12,color:C.muted,margin:"-6px 0 14px"}}>Use “Repeat every month” for normal monthly budgets. Use “Only this month” when one month needs a different amount.</div>
-    <button onClick={()=>{if(!cat||!amt)return;setBudget(cat,+amt,{scope,month});close();}} style={SB}>Save Budget</button>
+    <div style={{fontSize:12,color:C.muted,margin:"-6px 0 14px"}}>You can set one overall budget for a category, or separate limits for subcategories like Food · Restaurant and Food · Online Food.</div>
+    <button onClick={save} style={SB}>Save Budget</button>
   </Sheet>);
 }
+
 
 /* Settings — backup, restore */
 function SettingsModal({close,data,pin,restoreData}){
