@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v6.9 Category Labels + Budget Clarity
+   MONEYMATE  ·  Smart Money Tracker  ·  v7.0 Category Numbers + Statement Prep
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -884,9 +884,9 @@ function buildCategoryWheel(rows,cats){
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
 function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;const budget=+row.budget||0;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
   <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
-  <div style={{fontSize:9.5,color:budget?C.brand:"transparent",marginTop:1,fontWeight:850,whiteSpace:"nowrap"}}>{budget?`Budget ${inr(budget)}`:"."}</div>
+  <div title="Budget" style={{fontSize:tiny?10.5:11,color:budget?C.brand:C.muted,marginTop:1,fontWeight:850,whiteSpace:"nowrap"}}>{inr(budget)}</div>
   <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
-  <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>Spent {inr(row.value)}</div>
+  <div title="Expense this period" style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
 </button>)}
 function BudgetFillBubble({row,index=0,budget=0,onClick,hasSub=false}){
   const spent=+row.value||0;
