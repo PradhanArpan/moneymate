@@ -497,7 +497,7 @@ function Main({data,persist,pin}){
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.ink}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}body{background:#F7F4FF;margin:0;overflow-x:hidden;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid #E5E1F3;} .budget-carousel::-webkit-scrollbar{display:none;} .budget-track{display:flex;gap:10px;width:max-content;animation:mmBudgetSlide 34s linear infinite;padding:12px 16px 14px;} .budget-carousel:active .budget-track{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}body{background:#F7F4FF;margin:0;overflow-x:hidden;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid #E5E1F3;} .budget-carousel::-webkit-scrollbar{display:none;} .budget-track{display:flex;gap:8px;width:max-content;animation:mmBudgetSlide 34s linear infinite;padding:10px 14px 12px;} .budget-carousel:active .budget-track{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
       <div style={{paddingBottom:76}}>
         {tab==="home"    &&<HomeTab    {...shared}/>} 
         {tab==="entries" &&<EntriesTab {...shared}/>} 
@@ -790,12 +790,12 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
   const inc=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const currentBudget={...(data.budgets||{}),...((data.budgetOverrides||{})[month]||{})};
   const totalBudget=Object.values(currentBudget).reduce((s,v)=>s+(+v||0),0);
-  const rows=categoryRows(txns,expCats).slice(0,8);
+  const rows=categoryRows(txns,expCats);
   return(<div style={Screen}>
     <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{padding:"0 0 18px"}}>
       <BudgetBand title="Expenses" sub={`spent ${inr(exp)}`} amount={inr(exp)} budget={`budgeted ${inr(totalBudget)}`} color="#F7D7E8"/>
-      <BudgetCategoryCarousel rows={rows} onBudget={()=>setModal("budget",{month})}/>
+      <BudgetCategoryCarousel rows={rows} budgets={currentBudget} onBudget={()=>setModal("budget",{month})}/>
       <BudgetBand title="Savings" sub={`deposited ${inr(Math.max(0,inc-exp))}`} amount={inr(Math.max(0,inc-exp))} budget="monthly target ₹0" color="#FFE7D5"/>
       <BudgetBand title="Income" sub={`received ${inr(inc)}`} amount={inr(inc)} budget="monthly estimate ₹0" color="#D4F3EF"/>
       <div style={{padding:"16px 18px",display:"grid",gap:8}}>
@@ -867,7 +867,30 @@ function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false
   <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
   <div style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
 </button>)}
-function BudgetCategoryCarousel({rows,onBudget}){const items=[...rows,{name:"More",value:0,more:true}];const doubled=[...items,...items];return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:76,flex:"0 0 76px"}}><div style={{fontSize:12,fontWeight:850,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:48,height:48,background:"#EFEDEF",fontSize:30,color:C.muted}}>＋</div><div style={{fontSize:12,color:C.muted,fontWeight:900}}>{inr(0)}</div></button>:<div key={`${r.name}-${i}`} style={{width:76,flex:"0 0 76px"}}><CategoryBubble row={r} index={i} compact onClick={onBudget}/></div>)}</div></div>}
+function BudgetFillBubble({row,index=0,budget=0,onClick}){
+  const spent=+row.value||0;
+  const target=+budget||0;
+  const over=target>0&&spent>target;
+  const pct=target>0?Math.min(100,Math.round(spent/target*100)):(spent>0?100:0);
+  const color=over?C.expense:C.income;
+  const cat=mainCategory(row.name);
+  return <button onClick={onClick} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:74,flex:"0 0 74px",padding:0}}>
+    <div style={{fontSize:11.5,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
+    <div style={{width:52,height:52,borderRadius:"50%",margin:"5px auto 5px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",border:`1px solid ${over?"rgba(233,77,106,.42)":"rgba(36,194,106,.22)"}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
+      <div style={{position:"absolute",left:0,right:0,bottom:0,height:`${pct}%`,background:over?"linear-gradient(180deg,#FFB3C1,#F06D88)":"linear-gradient(180deg,#BFF7D6,#2EC76D)",opacity:.88,transition:"height .25s ease"}}/>
+      <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:23,filter:pct>48?"drop-shadow(0 1px 2px rgba(255,255,255,.65))":"none"}}>{CAT_EMOJI[cat]||"📌"}</div>
+    </div>
+    <div style={{fontSize:12,fontWeight:950,color:spent?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(spent)}</div>
+    <div style={{fontSize:10.5,fontWeight:over?950:800,color:over?C.expense:C.muted,whiteSpace:"nowrap"}}>{target?`of ${inr(target)}`:"Set budget"}</div>
+  </button>;
+}
+function BudgetCategoryCarousel({rows,budgets={},onBudget}){
+  const visible=rows.filter(r=>(+r.value||0)>0||(+budgets[r.name]||0)>0);
+  const base=visible.length?visible:rows;
+  const items=[...base,{name:"More",value:0,more:true}];
+  const doubled=[...items,...items];
+  return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=>r.more?<button key={`more-${i}`} onClick={onBudget} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:74,flex:"0 0 74px",padding:0}}><div style={{fontSize:11.5,fontWeight:900,whiteSpace:"nowrap"}}>More</div><div style={{...CircleBase,width:52,height:52,background:"rgba(255,255,255,.34)",fontSize:30,color:C.muted,border:"1px solid rgba(33,31,58,.08)"}}>＋</div><div style={{fontSize:10.5,color:C.muted,fontWeight:800}}>Budget</div></button>:<BudgetFillBubble key={`${r.name}-${i}`} row={r} index={i} budget={budgets[r.name]} onClick={onBudget}/>)}</div></div>;
+}
 
 function SpendingDonut({data,expense,income,period}){
   const hasData=data.length>0&&expense>0;
