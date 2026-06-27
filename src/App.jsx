@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v5.9 Header/Budget/Overview Polish
+   MONEYMATE  ·  Smart Money Tracker  ·  v6.1 Logos + Green Meters
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -40,6 +40,66 @@ const CAT_EMOJI = {
   Family:"📍",Gifts:"🎁",Coffee:"☕",Fuel:"⛽",Travel:"✈️",Bills:"🧾",
   Mobile:"📱",Internet:"🌐",Subscription:"🔁",Personal:"🙂",Charity:"🤝",Insurance:"🛡️",
 };
+
+const LOGO_CHOICES = [
+  {key:"auto", label:"Auto", mark:"AUTO", icon:"✨", bg:"#EEE9FF", fg:"#6C5CE7"},
+  {key:"sib", label:"South Indian Bank", mark:"SIB", icon:"🏦", bg:"#F7E7D0", fg:"#8A5A00"},
+  {key:"hdfc", label:"HDFC Bank", mark:"HDFC", icon:"🏦", bg:"#E7EEFF", fg:"#2448A8"},
+  {key:"sbi", label:"State Bank of India", mark:"SBI", icon:"🏦", bg:"#E5F4FF", fg:"#1379B8"},
+  {key:"kotak", label:"Kotak Bank", mark:"KOTAK", icon:"🏦", bg:"#EAF0FF", fg:"#1D4ED8"},
+  {key:"icici", label:"ICICI Bank", mark:"ICICI", icon:"🏦", bg:"#FFF0DF", fg:"#B45309"},
+  {key:"axis", label:"Axis Bank", mark:"AXIS", icon:"🏦", bg:"#FCE7F3", fg:"#9D174D"},
+  {key:"cash", label:"Cash", mark:"CASH", icon:"👛", bg:"#E7F8F5", fg:"#0F9B8E"},
+  {key:"upi", label:"UPI / Wallet", mark:"UPI", icon:"📱", bg:"#EEF2FF", fg:"#4F46E5"},
+  {key:"card", label:"Credit Card", mark:"CARD", icon:"💳", bg:"#EEE9FF", fg:"#6C5CE7"},
+  {key:"loan", label:"Loan", mark:"LOAN", icon:"🏦", bg:"#FFE8EE", fg:"#E94D6A"},
+  {key:"mortgage", label:"Mortgage / Home Loan", mark:"HOME", icon:"🏠", bg:"#FFE8EE", fg:"#E94D6A"},
+  {key:"lic", label:"LIC / Insurance", mark:"LIC", icon:"🛡️", bg:"#E8F7FF", fg:"#0E7490"},
+  {key:"mf", label:"Mutual Fund", mark:"MF", icon:"📈", bg:"#E9FBEF", fg:"#15803D"},
+  {key:"goal", label:"Goal", mark:"GOAL", icon:"🎯", bg:"#FFF3D6", fg:"#D97706"},
+];
+const LOGO_MAP = Object.fromEntries(LOGO_CHOICES.map(x=>[x.key,x]));
+function autoLogoKey(a={}){
+  const n=String(a.name||"").toLowerCase();
+  const t=String(a.type||"").toLowerCase();
+  const lt=String(a.loanType||"").toLowerCase();
+  if(n.includes("south indian")||n.includes("sib"))return "sib";
+  if(n.includes("hdfc"))return "hdfc";
+  if(n.includes("sbi")||n.includes("state bank"))return "sbi";
+  if(n.includes("kotak"))return "kotak";
+  if(n.includes("icici"))return "icici";
+  if(n.includes("axis"))return "axis";
+  if(t.includes("cash"))return "cash";
+  if(t.includes("upi")||t.includes("wallet"))return "upi";
+  if(t.includes("credit"))return "card";
+  if(t.includes("loan")&&lt.includes("home"))return "mortgage";
+  if(t.includes("loan"))return "loan";
+  if(t.includes("insurance"))return "lic";
+  if(t.includes("mutual"))return "mf";
+  if(t.includes("goal")||a._goal)return "goal";
+  return "auto";
+}
+function logoChoice(a={}){const key=a.logoKey&&a.logoKey!=="auto"?a.logoKey:autoLogoKey(a);return LOGO_MAP[key]||LOGO_MAP.auto;}
+function LogoBadge({entity,size=56,tall=false}){
+  const l=logoChoice(entity);
+  const mark=l.mark&&l.mark.length<=4?l.mark:l.icon;
+  return <div style={{width:size,minHeight:tall?86:size,height:tall?"auto":size,borderRadius:Math.max(14,Math.round(size*.26)),background:l.bg,color:l.fg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,flexShrink:0,alignSelf:tall?"stretch":"center",boxShadow:"inset 0 0 0 1px rgba(34,35,56,.06)"}}>
+    <div style={{fontSize:size>=66?22:18,lineHeight:1}}>{l.icon}</div>
+    <div style={{fontSize:size>=66?11:9,fontWeight:950,letterSpacing:.2,lineHeight:1,whiteSpace:"nowrap"}}>{mark}</div>
+  </div>;
+}
+function LogoSelector({value,onChange,types=[]}){
+  const picks=LOGO_CHOICES.filter(x=>x.key!=="auto" || true);
+  return <div style={{marginBottom:12}}>
+    <L>Logo</L>
+    <div style={{display:"flex",gap:8,overflowX:"auto",padding:"2px 0 8px",WebkitOverflowScrolling:"touch"}}>
+      {picks.map(l=><button key={l.key} type="button" onClick={()=>onChange(l.key)} style={{border:`2px solid ${value===l.key||(!value&&l.key==="auto")?C.brand:"transparent"}`,background:value===l.key||(!value&&l.key==="auto")?C.brandDim:C.card,borderRadius:14,padding:6,minWidth:66,cursor:"pointer",boxShadow:"0 1px 6px rgba(0,0,0,.04)"}}>
+        <LogoBadge entity={{logoKey:l.key,name:l.label,type:types[0]||""}} size={42}/>
+        <div style={{fontSize:9,fontWeight:800,color:C.muted,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:52}}>{l.label.split(" ")[0]}</div>
+      </button>)}
+    </div>
+  </div>
+}
 
 /* ── Utils ───────────────────────────────────────────────────────── */
 const inr    = n=>"₹"+new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Math.round(n||0));
@@ -317,7 +377,7 @@ function Main({data,persist,pin}){
   const addAcc  =a=>persist({...data,accounts:[...data.accounts,{...a,id:uid()}]});
   const delAcc  =id=>persist({...data,accounts:data.accounts.filter(a=>a.id!==id),transactions:data.transactions.filter(t=>t.accountId!==id&&t.toAccountId!==id)});
   const editAcc =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
-  const editLoan=(id,out)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,outstandingAmount:+out}:a)});
+  const editLoan=(id,out,ch={})=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch,outstandingAmount:+out}:a)});
   const editCC  =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
   const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),type:"expense",amount:+amt,category:"EMI",accountId:bankId,date:today(),note:note||"Loan payment"};const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});};
   const addGoal =g=>persist({...data,goals:[...data.goals,{...g,id:uid()}]});
@@ -596,7 +656,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
           </div>
           <div style={{display:"grid",gap:12}}>
             {accountRows.map((a,i)=><button key={a.id} onClick={()=>a._goal?setModal("editgoal",{goal:a._goal}):setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={{...AccountRow,alignItems:(a._goal||a.type==="Loan")?"flex-start":"center"}}>
-              <div style={{...AccountSquare,background:accountGradient(a,i)}}>{iconFor(a)}</div>
+              <LogoBadge entity={a} size={(a._goal||a.type==="Loan")?72:56} tall={a._goal||a.type==="Loan"}/>
               <div style={{flex:1,textAlign:"left",minWidth:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
                   <div style={{fontSize:15,fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
@@ -631,13 +691,12 @@ function accountGradient(a,i){
 }
 function FuelMeter({pct=0,tone="goal",left="",right=""}){
   const p=Math.max(0,Math.min(100,pct));
-  const col=tone==="loan"?"#E94D6A":"#F59E0B";
-  const glow=tone==="loan"?"rgba(233,77,106,.22)":"rgba(245,158,11,.22)";
+  const green="#24C26A";
   return <div style={{marginTop:8}}>
-    <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,fontWeight:850,color:C.muted,marginBottom:5}}><span>{left}</span><span>{right}</span></div>
-    <div style={{height:13,borderRadius:999,background:"linear-gradient(90deg,#EEEAF7,#F8F6FC)",position:"relative",overflow:"hidden",border:"1px solid rgba(36,35,50,.08)",boxShadow:"inset 0 1px 3px rgba(0,0,0,.05)"}}>
-      <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${p}%`,borderRadius:999,background:`linear-gradient(90deg,${col}99,${col})`,boxShadow:`0 0 14px ${glow}`}}/>
-      <div style={{position:"absolute",left:`calc(${p}% - 8px)`,top:-3,width:18,height:18,borderRadius:"50%",background:"#fff",border:`4px solid ${col}`,boxShadow:"0 2px 8px rgba(0,0,0,.18)"}}/>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,fontWeight:850,color:C.muted,marginBottom:5,gap:8}}><span>{left}</span><span style={{textAlign:"right"}}>{right}</span></div>
+    <div style={{height:15,borderRadius:999,background:"#FFE8EE",position:"relative",overflow:"hidden",border:"1px solid rgba(233,77,106,.14)",boxShadow:"inset 0 1px 4px rgba(233,77,106,.12)"}}>
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${p}%`,borderRadius:999,background:`linear-gradient(90deg,#86EFAC,${green})`,boxShadow:"0 0 14px rgba(36,194,106,.25)"}}/>
+      <div style={{position:"absolute",left:`calc(${p}% - 8px)`,top:-2,width:18,height:18,borderRadius:"50%",background:"#fff",border:`4px solid ${green}`,boxShadow:"0 2px 8px rgba(0,0,0,.18)"}}/>
     </div>
   </div>;
 }
@@ -741,7 +800,7 @@ const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",bord
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
 function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Planned this month</div>{planned.slice(0,5).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1}}><div style={{fontWeight:700}}>{r.name}</div><div style={{fontSize:13,color:r.status.tone}}>{r.status.label}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={TinyPill}>Paid</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"12px 0 9px",fontSize:16,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap"}}><span style={{marginRight:8}}>{icon}</span>{label}</button>}
-const AccountRow={display:"flex",alignItems:"center",gap:13,border:"none",background:"transparent",padding:0,cursor:"pointer"};
+const AccountRow={display:"flex",alignItems:"stretch",gap:12,border:"none",background:"rgba(255,255,255,.34)",padding:"7px 6px",borderRadius:18,cursor:"pointer"};
 const AccountSquare={width:52,height:52,borderRadius:14,display:"grid",placeItems:"center",color:"#fff",fontSize:24,flexShrink:0};
 const AddAccountRow={display:"flex",alignItems:"center",gap:13,border:"none",background:"transparent",padding:"18px 0",cursor:"pointer"};
 const DashedPlus={width:52,height:52,borderRadius:14,border:"2px dashed #C9C7D0",display:"grid",placeItems:"center",fontSize:27,color:C.muted,background:"#FAFAFD"};
@@ -1079,53 +1138,54 @@ function AccountPickerModal({close,setModal}){
 
 function AccountModal({close,addAcc,presetType,title}){
   const allTypes=[...BANK_TYPES,"Savings","Mutual Fund","Insurance"];
-  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",hint:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",hint:"",logoKey:"auto"});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title={title||"New Account"}>
     <L>Name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. HDFC Savings"/>
     <L>Type</L><select style={F} value={f.type} onChange={s("type")}>{allTypes.map(t=><option key={t}>{t}</option>)}</select>
-    <L>Current balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/>
+    <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[f.type]}/><L>Current balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/>
     <L>Last 4 digits (for PDF auto-match)</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")} placeholder="e.g. 4821"/>
-    <button onClick={()=>{if(!f.name)return;addAcc({name:f.name,type:f.type,opening:+f.opening||0,hint:f.hint.trim()});close();}} style={SB}>Save</button>
+    <button onClick={()=>{if(!f.name)return;addAcc({name:f.name,type:f.type,opening:+f.opening||0,hint:f.hint.trim(),logoKey:f.logoKey});close();}} style={SB}>Save</button>
   </Sheet>);
 }
 
 function CreditCardModal({close,addAcc}){
-  const[f,setF]=useState({name:"",ccType:CC_TYPES[0],creditLimit:"",currentOutstanding:"",dueDay:"",hint:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",ccType:CC_TYPES[0],creditLimit:"",currentOutstanding:"",dueDay:"",hint:"",logoKey:"card"});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title="New Credit Card">
     <L>Card name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. HDFC Regalia"/>
     <L>Card type</L><select style={F} value={f.ccType} onChange={s("ccType")}>{CC_TYPES.map(t=><option key={t}>{t}</option>)}</select>
-    <L>Credit limit (₹)</L><input style={F} type="number" value={f.creditLimit} onChange={s("creditLimit")} placeholder="100000"/>
+    <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={["Credit Card"]}/><L>Credit limit (₹)</L><input style={F} type="number" value={f.creditLimit} onChange={s("creditLimit")} placeholder="100000"/>
     <L>Current outstanding (₹)</L><input style={F} type="number" value={f.currentOutstanding} onChange={s("currentOutstanding")} placeholder="0"/>
     <L>Payment due day (1-31)</L><input style={F} type="number" min="1" max="31" value={f.dueDay} onChange={s("dueDay")} placeholder="e.g. 15 (for 15th of each month)"/>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")} placeholder="e.g. 5678"/>
-    <button onClick={()=>{if(!f.name||!f.creditLimit)return;addAcc({name:f.name,type:"Credit Card",ccType:f.ccType,creditLimit:+f.creditLimit,currentOutstanding:+f.currentOutstanding||0,dueDay:+f.dueDay||0,opening:0,hint:f.hint.trim()});close();}} style={SB}>Add Credit Card</button>
+    <button onClick={()=>{if(!f.name||!f.creditLimit)return;addAcc({name:f.name,type:"Credit Card",ccType:f.ccType,creditLimit:+f.creditLimit,currentOutstanding:+f.currentOutstanding||0,dueDay:+f.dueDay||0,opening:0,hint:f.hint.trim(),logoKey:f.logoKey});close();}} style={SB}>Add Credit Card</button>
   </Sheet>);
 }
 
 function EditAccModal({close,account,editAcc}){
-  const[f,setF]=useState({name:account.name,opening:account.opening||0,hint:account.hint||""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:account.name,opening:account.opening||0,hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account)});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title="Edit Account">
     <L>Name</L><input style={F} value={f.name} onChange={s("name")}/>
-    <L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
+    <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[account.type]}/><L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
     <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")}/>
-    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,hint:f.hint.trim()});close();}} style={SB}>Save</button>
+    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,hint:f.hint.trim(),logoKey:f.logoKey});close();}} style={SB}>Save</button>
   </Sheet>);
 }
 
 function LoanModal({close,addAcc,presetLoanType,title}){
-  const[f,setF]=useState({name:"",loanType:presetLoanType||LOAN_TYPES[0],sanctioned:"",outstanding:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",loanType:presetLoanType||LOAN_TYPES[0],sanctioned:"",outstanding:"",logoKey:(presetLoanType||"").includes("Home")?"mortgage":"loan"});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title={title||"Add Loan"}>
     <L>Loan name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. Home Loan"/>
     <L>Type</L><select style={F} value={f.loanType} onChange={s("loanType")}>{LOAN_TYPES.map(t=><option key={t}>{t}</option>)}</select>
-    <L>Sanctioned amount (₹)</L><input style={F} type="number" value={f.sanctioned} onChange={s("sanctioned")} placeholder="780000"/>
+    <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={["Loan"]}/><L>Sanctioned amount (₹)</L><input style={F} type="number" value={f.sanctioned} onChange={s("sanctioned")} placeholder="780000"/>
     <L>Current outstanding (₹)</L><input style={F} type="number" value={f.outstanding} onChange={s("outstanding")} placeholder="576797"/>
-    <button onClick={()=>{if(!f.name||!f.sanctioned)return;addAcc({name:f.name,type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctioned,outstandingAmount:+f.outstanding||0,opening:0,hint:""});close();}} style={SB}>Add</button>
+    <button onClick={()=>{if(!f.name||!f.sanctioned)return;addAcc({name:f.name,type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctioned,outstandingAmount:+f.outstanding||0,opening:0,hint:"",logoKey:f.logoKey});close();}} style={SB}>Add</button>
   </Sheet>);
 }
 
 function EditLoanModal({close,account,editLoan}){
   const[out,setOut]=useState(account.outstandingAmount||0);
+  const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
   const paid=Math.max(0,(account.sanctionedAmount||0)-out),pct=account.sanctionedAmount?Math.min(100,paid/account.sanctionedAmount*100):0;
   return(<Sheet close={close} title="Update Outstanding">
     <div style={{background:"linear-gradient(160deg,#0D1B2A,#0B3D2E)",borderRadius:14,padding:16,marginBottom:16,color:"#fff",textAlign:"center"}}>
@@ -1133,25 +1193,26 @@ function EditLoanModal({close,account,editLoan}){
       <div style={{height:10,background:"rgba(255,255,255,0.1)",borderRadius:5,margin:"12px 0 6px"}}><div style={{width:`${pct}%`,height:"100%",background:C.brand,borderRadius:5}}/></div>
       <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6B9A8A"}}><span>Paid: {inr(paid)}</span><span>Total: {inr(account.sanctionedAmount||0)}</span></div>
     </div>
-    <L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
-    <button onClick={()=>{editLoan(account.id,+out);close();}} style={SB}>Update</button>
+    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Loan"]}/><L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
+    <button onClick={()=>{editLoan(account.id,+out,{logoKey});close();}} style={SB}>Update</button>
   </Sheet>);
 }
 
 function EditCCModal({close,account,editCC}){
   const[out,setOut]=useState(account.currentOutstanding||0);
+  const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
   const[lim,setLim]=useState(account.creditLimit||0);
   const[dueDay,setDueDay]=useState(account.dueDay||"");
   const util=lim>0?Math.min(100,out/lim*100):0;
   return(<Sheet close={close} title="Update Card">
-    <L>Credit limit (₹)</L><input style={F} type="number" value={lim} onChange={e=>setLim(e.target.value)}/>
+    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Credit Card"]}/><L>Credit limit (₹)</L><input style={F} type="number" value={lim} onChange={e=>setLim(e.target.value)}/>
     <L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
     <L>Due day (1-31)</L><input style={F} type="number" min="1" max="31" value={dueDay} onChange={e=>setDueDay(e.target.value)} placeholder="e.g. 15"/>
     <div style={{background:C.bg,borderRadius:10,padding:12,marginBottom:12}}>
       <div style={{fontSize:12,color:C.muted,marginBottom:6}}>Utilisation: {Math.round(util)}%</div>
       <div style={{height:8,background:"#EEF3FF",borderRadius:4,position:"relative"}}><div style={{width:`${util}%`,height:"100%",background:util<20?C.brand:util<50?C.gold:C.expense,borderRadius:4}}/><div style={{position:"absolute",left:"20%",top:0,bottom:0,width:2,background:C.ink,opacity:0.4}}/></div>
     </div>
-    <button onClick={()=>{editCC(account.id,{currentOutstanding:+out,creditLimit:+lim,dueDay:+dueDay||0});close();}} style={SB}>Update</button>
+    <button onClick={()=>{editCC(account.id,{currentOutstanding:+out,creditLimit:+lim,dueDay:+dueDay||0,logoKey});close();}} style={SB}>Update</button>
   </Sheet>);
 }
 
@@ -1183,10 +1244,11 @@ function GoalModal({close,addGoal,bankAccounts}){
   const[name,setName]=useState(""),  [target,setTarget]=useState(""), [targetDate,setTargetDate]=useState("");
   const[lt,setLt]=useState("none"), [accId,setAccId]=useState(bankAccounts[0]?.id||"");
   const[iType,setIType]=useState(INVEST_TYPES[0]), [iVal,setIVal]=useState(""), [saved,setSaved]=useState("");
-  const go=()=>{if(!name||!target)return;const g={name,target:+target,targetDate,linkType:lt};if(lt==="none")g.saved=+saved||0;if(lt==="account")g.linkedAccountId=accId;if(lt==="investment"){g.investmentType=iType;g.investmentValue=+iVal||0;g.investmentValueDate=today();}addGoal(g);close();};
+  const[logoKey,setLogoKey]=useState("goal");
+  const go=()=>{if(!name||!target)return;const g={name,target:+target,targetDate,linkType:lt,logoKey};if(lt==="none")g.saved=+saved||0;if(lt==="account")g.linkedAccountId=accId;if(lt==="investment"){g.investmentType=iType;g.investmentValue=+iVal||0;g.investmentValueDate=today();}addGoal(g);close();};
   return(<Sheet close={close} title="New Goal">
     <L>Goal name</L><input style={F} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Emergency Fund"/>
-    <L>Target amount (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="100000"/>
+    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Target amount (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="100000"/>
     <L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/>
     <p style={{fontSize:12,color:C.muted,marginTop:-8}}>App will calculate how much to save monthly to reach it on time.</p>
     <L>Type</L>
@@ -1201,9 +1263,9 @@ function GoalModal({close,addGoal,bankAccounts}){
 }
 
 function EditGoalModal({close,goal,editGoal}){
-  const[name,setName]=useState(goal.name), [target,setTarget]=useState(goal.target), [iVal,setIVal]=useState(goal.investmentValue||""), [targetDate,setTargetDate]=useState(goal.targetDate||"");
-  if(goal.linkType==="investment")return(<Sheet close={close} title="Update Value"><div style={{textAlign:"center",marginBottom:18}}><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:700,color:C.gold}}>{inr(goal.investmentValue||0)}</div><div style={{fontSize:12,color:C.muted}}>{goal.investmentType}</div></div><L>New value (₹)</L><input autoFocus style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)}/><button onClick={()=>{if(!iVal)return;editGoal(goal.id,{investmentValue:+iVal,investmentValueDate:today()});close();}} style={SB}>Update</button></Sheet>);
-  return(<Sheet close={close} title="Edit Goal"><L>Name</L><input style={F} value={name} onChange={e=>setName(e.target.value)}/><L>Target (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)}/><L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/><button onClick={()=>{if(!name||!target)return;editGoal(goal.id,{name,target:+target,targetDate});close();}} style={SB}>Save</button></Sheet>);
+  const[name,setName]=useState(goal.name), [target,setTarget]=useState(goal.target), [iVal,setIVal]=useState(goal.investmentValue||""), [targetDate,setTargetDate]=useState(goal.targetDate||""), [logoKey,setLogoKey]=useState(goal.logoKey||"goal");
+  if(goal.linkType==="investment")return(<Sheet close={close} title="Update Value"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><div style={{textAlign:"center",marginBottom:18}}><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:700,color:C.gold}}>{inr(goal.investmentValue||0)}</div><div style={{fontSize:12,color:C.muted}}>{goal.investmentType}</div></div><L>New value (₹)</L><input autoFocus style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)}/><button onClick={()=>{if(!iVal)return;editGoal(goal.id,{investmentValue:+iVal,investmentValueDate:today(),logoKey});close();}} style={SB}>Update</button></Sheet>);
+  return(<Sheet close={close} title="Edit Goal"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Name</L><input style={F} value={name} onChange={e=>setName(e.target.value)}/><L>Target (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)}/><L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/><button onClick={()=>{if(!name||!target)return;editGoal(goal.id,{name,target:+target,targetDate,logoKey});close();}} style={SB}>Save</button></Sheet>);
 }
 
 function BudgetModal({close,setBudget,expCats,month}){
