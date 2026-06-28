@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v7.2 Period Selector Polish
+   MONEYMATE  ·  Smart Money Tracker  ·  v7.3 Mobile Polish
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -216,7 +216,7 @@ const shiftPeriod=(p,dir)=>{
   return p;
 };
 const convertPeriod=(p,kind)=>{
-  if(kind==="date")return {kind:"date",date:dateFromPeriod(p)};
+  if(kind==="date")return {kind:"date",date:(p?.kind==="date"||p?.kind==="today")?(p.date||today()):today()};
   if(kind==="month")return {kind:"month",month:monthFromPeriod(p)};
   if(kind==="year")return {kind:"year",year:yearFromPeriod(p)};
   return p;
@@ -573,7 +573,7 @@ function Main({data,persist,pin}){
       {modal?.type==="paycc"     &&<PayCCModal      close={close} cc={modal.cc} bankAccounts={bankAccounts} addTxn={addTxn}/>} 
       {modal?.type==="goal"      &&<GoalModal       close={close} addGoal={addGoal} bankAccounts={bankAccounts}/>} 
       {modal?.type==="editgoal"  &&<EditGoalModal   close={close} goal={modal.goal} editGoal={editGoal}/>} 
-      {modal?.type==="budget"    &&<BudgetModal     close={close} setBudget={setBudget} expCats={expCats} month={modal.month||curMo()}/>} 
+      {modal?.type==="budget"    &&<BudgetModal     close={close} setBudget={setBudget} expCats={expCats} month={modal.month||curMo()} editKey={modal.key} editAmount={modal.amount} editScope={modal.scope}/>} 
       {modal?.type==="addcat"    &&<AddCategoryModal close={close} addCat={addCat} expCats={expCats}/>} 
       {modal?.type==="import"    &&<ImportModal     close={close} data={data} importBatch={importBatch} expCats={expCats} incCats={incCats}/>} 
       {modal?.type==="settings"  &&<SettingsModal   close={close} data={data} pin={pin} restoreData={restoreData}/>} 
@@ -677,8 +677,7 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const pieData=rows.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),raw:r.name,value:r.value}));
-  const budgetMonth=period.kind==="month"?period.month:period.kind==="date"?monthFromDate(period.date):curMo();
-  const periodBudget={...(data.budgets||{}),...((data.budgetOverrides||{})[budgetMonth]||{})};
+  const periodBudget=budgetMapForPeriod(data,period);
   const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name)});
   const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:58}}>
@@ -745,6 +744,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const debtValue=data.accounts.reduce((s,a)=>debtTypes.includes(a.type)?s+Math.abs(balances[a.id]||0):s,0);
   const iconFor=a=>a.type==="Credit Card"?"💳":a.type==="Loan"?"🏦":a.type==="Goal"?"🎯":a.type==="Savings"?"🏛️":a.type==="Mutual Fund"?"📈":a.type==="Insurance"?"🛡️":a.type==="Cash"?"👛":a.type==="UPI / Wallet"?"📱":"🏦";
   const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
+  const lastTxnFor=id=>[...data.transactions].filter(t=>t.accountId===id||t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const accountSub=a=>{
     if(a._goal){
       const pct=progressPct(a.value,a.target);
@@ -772,9 +772,9 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
           <div style={{display:"grid",gap:14}}>
-            <AccountSection title="Saving Accounts" rows={accountRows.filter(a=>!["Loan","Credit Card","Mutual Fund","Insurance","Goal"].includes(a.type)&&!a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
-            <AccountSection title="Debt" rows={accountRows.filter(a=>["Loan","Credit Card"].includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
-            <AccountSection title="Investments" rows={accountRows.filter(a=>["Mutual Fund","Insurance"].includes(a.type)||a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
+            <AccountSection title="Saving Accounts" rows={accountRows.filter(a=>!["Loan","Credit Card","Mutual Fund","Insurance","Goal"].includes(a.type)&&!a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
+            <AccountSection title="Debt" rows={accountRows.filter(a=>["Loan","Credit Card"].includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
+            <AccountSection title="Investments" rows={accountRows.filter(a=>["Mutual Fund","Insurance"].includes(a.type)||a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} delAcc={delAcc} delGoal={delGoal}/>} />
             <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
           </div>
         </>
@@ -790,7 +790,7 @@ function AccountSection({title,rows,render}){
     {rows.map(render)}
   </div>;
 }
-function AccountListButton({a,accountValue,accountSub,setModal,delAcc,delGoal}){
+function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,delAcc,delGoal}){
   return <button onClick={()=>a._goal?setModal("editgoal",{goal:a._goal}):setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a})} style={{...AccountRow,alignItems:"stretch"}}>
     <LogoBadge entity={a} size={72} tall/>
     <div style={{flex:1,textAlign:"left",minWidth:0}}>
@@ -799,6 +799,7 @@ function AccountListButton({a,accountValue,accountSub,setModal,delAcc,delGoal}){
         <div style={{fontSize:14,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0}}>{inr(accountValue(a))}</div>
       </div>
       <div style={{fontSize:12.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
+      {lastTxn&&!a._goal&&!(["Loan","Credit Card"].includes(a.type))&&<div style={{fontSize:11.5,fontWeight:850,marginTop:4,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
       {a._goal&&<GoalFuelMeter goal={a}/>} 
     </div>
@@ -863,15 +864,16 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
       <BudgetBand title="Savings" sub={`deposited ${inr(Math.max(0,inc-exp))}`} amount={inr(Math.max(0,inc-exp))} budget="monthly target ₹0" color="#FFE7D5"/>
       <BudgetBand title="Income" sub={`received ${inr(inc)}`} amount={inr(inc)} budget="monthly estimate ₹0" color="#D4F3EF"/>
       <div style={{padding:"16px 18px",display:"grid",gap:8}}>
-        {budgetEntries.length>0&&<div style={{fontSize:14,fontWeight:900,color:C.muted,marginBottom:2}}>Category and subcategory budgets for {monthLabel(month)}</div>}
-        {budgetEntries.map(([key,amt])=>{const p=parseBudgetKey(key);const spent=budgetSpentForKey(txns,key);const over=(+amt||0)>0&&spent>(+amt||0);return <div key={key} style={TransactionRow}>
+        {budgetEntries.length>0&&<div style={{fontSize:14,fontWeight:900,color:C.muted,marginBottom:2}}>Budget for {monthLabel(month)}</div>}
+        {budgetEntries.map(([key,amt])=>{const p=parseBudgetKey(key);const spent=budgetSpentForKey(txns,key);const over=(+amt||0)>0&&spent>(+amt||0);const scopeText=(data.budgetOverrides||{})[month]?.[key]!==undefined?"This month only":"Repeats monthly";return <div key={key} onClick={()=>setModal("budget",{month,key,amount:amt,scope:(data.budgetOverrides||{})[month]?.[key]!==undefined?"thisMonth":"repeat"})} style={{...TransactionRow,cursor:"pointer"}}>
           <CatIcon name={p.cat}/>
           <div style={{flex:1,fontWeight:800,minWidth:0}}>
             <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{budgetLabel(key)}</div>
-            <div style={{fontSize:11,color:over?C.expense:C.muted,fontWeight:over?900:700}}>{inr(spent)} spent · {(data.budgetOverrides||{})[month]?.[key]!==undefined?"This month override":"Repeats monthly"}</div>
+            <div style={{fontSize:11,color:over?C.expense:C.muted,fontWeight:over?900:700}}>{inr(spent)} spent</div>
+            <div style={{fontSize:10.5,color:C.muted,fontWeight:750,marginTop:2}}>{scopeText}</div>
           </div>
           <div style={{fontWeight:950,color:over?C.expense:C.ink}}>{inr(amt)}</div>
-          <button onClick={()=>delBudget(key,month)} style={PlainSmall}>×</button>
+          <button onClick={(e)=>{e.stopPropagation();delBudget(key,month);}} style={PlainSmall}>×</button>
         </div>})}
       </div>
     </div>
@@ -879,7 +881,7 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
 }
 
 /* ── 1Money-style UI helpers ───────────────────────────────────── */
-const Screen={minHeight:"100dvh",background:C.bg,paddingBottom:66,overflowX:"hidden"};
+const Screen={height:"100dvh",background:C.bg,paddingBottom:66,overflowX:"hidden",overflowY:"auto",WebkitOverflowScrolling:"touch"};
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
@@ -935,6 +937,17 @@ function budgetLabel(key){const p=parseBudgetKey(key);return p.sub?`${p.cat} · 
 function categoryBudgetTotal(budgets={},cat){const c=mainCategory(cat);return Object.entries(budgets).reduce((s,[k,v])=>s+(parseBudgetKey(k).cat===c?(+v||0):0),0);}
 function budgetSpentForKey(txns=[],key=""){const p=parseBudgetKey(key);return txns.filter(t=>t.type==="expense"&&mainCategory(t.category||"Other")===p.cat&&(!p.sub||(t.subcategory||"")===p.sub)).reduce((s,t)=>s+(+t.amount||0),0);}
 function hasSubBudgets(budgets={},cat){const c=mainCategory(cat);return Object.keys(budgets).some(k=>{const p=parseBudgetKey(k);return p.cat===c&&!!p.sub;});}
+function budgetMapForMonth(data,mk){return {...(data.budgets||{}),...((data.budgetOverrides||{})[mk]||{})};}
+function addBudgetMaps(total={},one={}){const out={...total};Object.entries(one).forEach(([k,v])=>{out[k]=(out[k]||0)+(+v||0);});return out;}
+function budgetMapForPeriod(data,period){
+  if(period?.kind==="year"){
+    let out={};const y=period.year||currentYear();
+    for(let m=1;m<=12;m++)out=addBudgetMaps(out,budgetMapForMonth(data,`${y}-${String(m).padStart(2,"0")}`));
+    return out;
+  }
+  const mk=period?.kind==="date"?monthFromDate(period.date):period?.kind==="month"?period.month:curMo();
+  return budgetMapForMonth(data,mk);
+}
 function buildCategoryWheel(rows,cats){
   const wanted=["Food","Groceries","Transport","Home","Family","Health","Education","Shopping","Leisure","Tithe","EMI/ Loan","Work","Other"];
   const by=new Map(rows.map(r=>[r.name,r]));
@@ -945,12 +958,23 @@ function buildCategoryWheel(rows,cats){
   return out;
 }
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
-function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){const color=C.charts[index%C.charts.length];const sz=tiny?50:compact?48:58;const budget=+row.budget||0;return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
-  <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
-  <div title="Budget" style={{fontSize:tiny?10.5:11,color:budget?C.brand:C.muted,marginTop:1,fontWeight:850,whiteSpace:"nowrap"}}>{inr(budget)}</div>
-  <div style={{...CircleBase,width:sz,height:sz,background:`linear-gradient(135deg,${color}22,#FFFFFF99)`,color,border:`1px solid ${color}18`}}><span style={{fontSize:tiny?22:24}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</span></div>
-  <div title="Expense this period" style={{fontSize:tiny?12.5:13,fontWeight:950,color:row.value?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(row.value)}</div>
-</button>)}
+function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){
+  const color=C.charts[index%C.charts.length];
+  const sz=tiny?50:compact?48:58;
+  const budget=+row.budget||0;
+  const spent=+row.value||0;
+  const pct=budget>0?Math.min(100,Math.round(spent/budget*100)):(spent>0?100:0);
+  const over=budget>0&&spent>budget;
+  const fill=over?"linear-gradient(180deg,#FFB3C1,#F06D88)":"linear-gradient(180deg,#BFF7D6,#2EC76D)";
+  return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
+    <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
+    <div style={{width:sz,height:sz,borderRadius:"50%",margin:"5px auto 5px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",color,border:`1px solid ${over?"rgba(233,77,106,.42)":`${color}18`}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
+      <div style={{position:"absolute",left:0,right:0,bottom:0,height:`${pct}%`,background:fill,opacity:.88,transition:"height .25s ease"}}/>
+      <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:tiny?22:24,filter:pct>48?"drop-shadow(0 1px 2px rgba(255,255,255,.65))":"none"}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</div>
+    </div>
+    <div title="Expense this period" style={{fontSize:tiny?12.5:13,fontWeight:950,color:over?C.expense:(spent?C.ink:C.muted),whiteSpace:"nowrap"}}>{inr(spent)}</div>
+  </button>);
+}
 function BudgetFillBubble({row,index=0,budget=0,onClick,hasSub=false}){
   const spent=+row.value||0;
   const target=+budget||0;
@@ -960,12 +984,12 @@ function BudgetFillBubble({row,index=0,budget=0,onClick,hasSub=false}){
   const cat=mainCategory(row.name);
   return <button onClick={onClick} style={{border:"none",background:"transparent",textAlign:"center",cursor:"pointer",width:74,flex:"0 0 74px",padding:0}}>
     <div style={{fontSize:11.5,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
-    <div style={{width:52,height:52,borderRadius:"50%",margin:"5px auto 5px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",border:`1px solid ${over?"rgba(233,77,106,.42)":"rgba(36,194,106,.22)"}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
+    <div style={{fontSize:10.5,fontWeight:850,color:C.muted,whiteSpace:"nowrap",height:14}}>{target?inr(target):"Set"}</div>
+    <div style={{width:52,height:52,borderRadius:"50%",margin:"3px auto 5px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",border:`1px solid ${over?"rgba(233,77,106,.42)":"rgba(36,194,106,.22)"}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
       <div style={{position:"absolute",left:0,right:0,bottom:0,height:`${pct}%`,background:over?"linear-gradient(180deg,#FFB3C1,#F06D88)":"linear-gradient(180deg,#BFF7D6,#2EC76D)",opacity:.88,transition:"height .25s ease"}}/>
       <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:23,filter:pct>48?"drop-shadow(0 1px 2px rgba(255,255,255,.65))":"none"}}>{CAT_EMOJI[cat]||"📌"}</div>
     </div>
-    <div style={{fontSize:12,fontWeight:950,color:spent?C.ink:C.muted,whiteSpace:"nowrap"}}>{inr(spent)}</div>
-    <div style={{fontSize:10.5,fontWeight:over?950:800,color:over?C.expense:C.muted,whiteSpace:"nowrap"}}>{target?`of ${inr(target)}`:"Set budget"}</div>
+    <div style={{fontSize:12,fontWeight:over?950:900,color:over?C.expense:(spent?C.ink:C.muted),whiteSpace:"nowrap"}}>{inr(spent)}</div>
     {hasSub&&<div style={{fontSize:9.5,fontWeight:850,color:C.brand,whiteSpace:"nowrap"}}>sub budgets</div>}
   </button>;
 }
@@ -1490,12 +1514,13 @@ function EditGoalModal({close,goal,editGoal}){
   return(<Sheet close={close} title="Edit Goal"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Name</L><input style={F} value={name} onChange={e=>setName(e.target.value)}/><L>Target (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)}/><L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/><button onClick={()=>{if(!name||!target)return;editGoal(goal.id,{name,target:+target,targetDate,logoKey});close();}} style={SB}>Save</button></Sheet>);
 }
 
-function BudgetModal({close,setBudget,expCats,month}){
-  const[cat,setCat]=useState(expCats[0]||"Other"), [subcat,setSubcat]=useState(""), [amt,setAmt]=useState(""), [scope,setScope]=useState("repeat"), [level,setLevel]=useState("category");
+function BudgetModal({close,setBudget,expCats,month,editKey,editAmount,editScope}){
+  const preset=parseBudgetKey(editKey||"");
+  const[cat,setCat]=useState(preset.cat||expCats[0]||"Other"), [subcat,setSubcat]=useState(preset.sub||""), [amt,setAmt]=useState(editAmount!==undefined?String(editAmount):""), [scope,setScope]=useState(editScope||"repeat"), [level,setLevel]=useState(preset.sub?"subcategory":"category");
   const subs=subcatsFor(cat,"expense");
   useEffect(()=>{if(level==="subcategory"&&!subcat)setSubcat(subs[0]||"");},[level,cat]);
   const save=()=>{if(!cat||!amt)return;const key=budgetKey(cat,level==="subcategory"?subcat:"");setBudget(key,+amt,{scope,month});close();};
-  return(<Sheet close={close} title="Set Budget">
+  return(<Sheet close={close} title={editKey?"Edit Budget":"Set Budget"}>
     <L>Budget level</L>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
       <button type="button" onClick={()=>setLevel("category")} style={{padding:"10px 8px",borderRadius:12,border:`1px solid ${level==="category"?C.brand:C.border}`,background:level==="category"?C.brandDim:C.card,color:level==="category"?C.brand:C.ink,fontWeight:850,cursor:"pointer"}}>Main category</button>
@@ -1506,7 +1531,7 @@ function BudgetModal({close,setBudget,expCats,month}){
     <L>Monthly limit (₹)</L><input style={F} type="number" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="5000"/>
     <L>How to apply</L><select style={F} value={scope} onChange={e=>setScope(e.target.value)}><option value="repeat">Repeat every month</option><option value="thisMonth">Only {monthLabel(month)}</option></select>
     <div style={{fontSize:12,color:C.muted,margin:"-6px 0 14px"}}>You can set one overall budget for a category, or separate limits for subcategories like Food · Restaurant and Food · Online Food.</div>
-    <button onClick={save} style={SB}>Save Budget</button>
+    <button onClick={save} style={SB}>{editKey?"Update Budget":"Save Budget"}</button>
   </Sheet>);
 }
 
