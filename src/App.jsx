@@ -703,17 +703,26 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   </div>);
 }
 
+function txnAccountOptions(data){return [{id:"all",name:"All Accounts"},...(data.accounts||[]).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
+function txnAccountLabel(data,id){if(!id||id==="all")return "All Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
+function nextTxnAccountId(data,current){const opts=txnAccountOptions(data);const i=Math.max(0,opts.findIndex(o=>o.id===current));return opts[(i+1)%opts.length]?.id||"all";}
+function txnMatchesAccount(t,id){return !id||id==="all"||t.accountId===id||t.toAccountId===id;}
+function txnBalanceEffect(t,id){const amt=+t.amount||0;if(!id||id==="all"){if(t.type==="income")return amt;if(t.type==="expense")return -amt;return 0;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TRANSACTIONS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
+function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const[search,setSearch]=useState("");
-  const periodList=periodTxns(data.transactions,period).sort((a,b)=>b.date.localeCompare(a.date));
-  const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
-  const startBal=netWorth-filtered.reduce((s,t)=>s+(t.type==="income"?+t.amount:t.type==="expense"?-t.amount:0),0);
+  const[accountFilter,setAccountFilter]=useState("all");
+  const cycleAccount=()=>setAccountFilter(id=>nextTxnAccountId(data,id));
+  const periodList=periodTxns(data.transactions,period).filter(t=>txnMatchesAccount(t,accountFilter)).sort((a,b)=>b.date.localeCompare(a.date));
+  const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
+  const endingBal=accountFilter==="all"?netWorth:(balances?.[accountFilter]||0);
+  const startBal=endingBal-filtered.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter),0);
   return(<div style={Screen}>
-    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
+    <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
     <div style={{padding:"16px 18px 8px"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
@@ -721,9 +730,9 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
         <SoftBalance label="Ending balance" value={inr(netWorth)}/>
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
-        <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{periodLabel(period)}</div></div>
-      </div>:<div style={{display:"grid",gap:9}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isInc=t.type==="income",isX=t.type==="transfer";return <div key={t.id} style={TransactionRow}>
-        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:800,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button><button onClick={()=>delTxn(t.id)} style={PlainSmall}>×</button>
+        <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
+      </div>:<div style={{display:"grid",gap:9}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter);const isPositive=eff>0;const isNegative=eff<0;return <div key={t.id} style={TransactionRow}>
+        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:800,color:isPositive?C.income:isNegative?C.expense:C.xfer}}>{isPositive?"+":isNegative?"−":""}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button><button onClick={()=>delTxn(t.id)} style={PlainSmall}>×</button>
       </div>})}</div>}
       <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>setModal("import")} style={SoftBtn}>Import PDF</button>{data.transactions.length>0&&<button onClick={exportCSV} style={SoftBtn}>Export CSV</button>}</div>
     </div>
@@ -757,9 +766,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
     if(a.type==="Credit Card")return `${a.ccType||"Credit Card"} · outstanding ${inr(Math.abs(accountValue(a)))}`;
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
-  if(detail){
-    return <AccountTransactionsView account={detail} data={data} balances={balances} netWorth={netWorth} accountValue={accountValue} setModal={setModal} delTxn={id=>setModal("noop")||null} onBack={()=>setDetail(null)}/>;
-  }
+  if(detail){ setDetail(null); }
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <AccountRibbon netWorth={netWorth} onAdd={()=>setModal("acctpicker")}/>
     <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
@@ -797,12 +804,12 @@ function regularAccountCanOpen(a){return !a._goal&&["Bank","Cash","UPI / Wallet"
 function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail}){
   const canOpen=regularAccountCanOpen(a);
   const open=()=>{
-    if(canOpen)return setDetail(a);
+    if(canOpen)return;
     if(a._goal)return setModal("editgoal",{goal:a._goal});
     return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});
   };
   const openEdit=e=>{e.stopPropagation();if(a._goal)return setModal("editgoal",{goal:a._goal});return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});};
-  return <div onClick={open} role="button" tabIndex={0} style={{...AccountRow,alignItems:"stretch"}}>
+  return <div onClick={open} role="button" tabIndex={0} style={{...AccountRow,alignItems:"stretch",cursor:canOpen?"default":"pointer"}}>
     <LogoBadge entity={a} size={72} tall/>
     <div style={{flex:1,textAlign:"left",minWidth:0}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
@@ -919,7 +926,7 @@ const Screen={height:"100dvh",background:C.bg,paddingBottom:66,overflowX:"hidden
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
-function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes}){
+function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="All Accounts",onAccountClick}){
   const p=period||{kind:"month",month:month||curMo()};
   const hasPeriod=!!(period||month);
   const shift=dir=>setPeriod?setPeriod(shiftPeriod(p,dir)):setMonth&&setMonth(dir>0?nextMo(month):prevMo(month));
@@ -934,7 +941,7 @@ function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodMod
   const lab=period?periodLabel(p):monthLabel(month);
   return(<div style={{position:"sticky",top:0,zIndex:15,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
     <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
-      <HeaderAvatar/><div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:650}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></div>{right||<span/>}
+      <HeaderAvatar/><button onClick={onAccountClick||undefined} style={{textAlign:"center",border:"none",background:"transparent",cursor:onAccountClick?"pointer":"default",padding:0,minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountLabel}</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></button>{right||<span/>}
     </div>
     {hasPeriod&&<div style={{display:"grid",gridTemplateColumns:"38px 1fr 38px",alignItems:"center",marginTop:9}}>
       <button onClick={()=>shift(-1)} style={HeaderArrow} aria-label="Previous"><ChevronLeft size={24}/></button>
