@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v7.0 Category Numbers + Statement Prep
+   MONEYMATE  ·  Smart Money Tracker  ·  v7.2 Period Selector Polish
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -183,12 +183,17 @@ const ymd=d=>d.toISOString().slice(0,10);
 const addDays=(s,n)=>{const d=new Date(s);d.setDate(d.getDate()+n);return ymd(d);};
 const currentYear=()=>new Date().getFullYear();
 const startOfWeek=(s=today())=>{const d=new Date(s);const day=d.getDay();d.setDate(d.getDate()-((day+6)%7));return ymd(d);};
+const monthFromDate=s=>String(s||today()).slice(0,7);
+const yearFromDate=s=>+(String(s||today()).slice(0,4))||currentYear();
+const dateFromPeriod=p=>p?.date || (p?.kind==="month"?`${p.month||curMo()}-01`:p?.kind==="year"?`${p.year||currentYear()}-01-01`:today());
+const monthFromPeriod=p=>p?.kind==="month"?(p.month||curMo()):p?.kind==="date"||p?.kind==="today"?monthFromDate(p.date||today()):p?.kind==="year"?`${p.year||currentYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`:curMo();
+const yearFromPeriod=p=>p?.kind==="year"?(p.year||currentYear()):yearFromDate(dateFromPeriod(p));
 const periodRange=p=>{
   if(!p||p.kind==="month"){
     const mk=p?.month||curMo(),[y,m]=mk.split("-").map(Number);
     return {start:`${mk}-01`,end:ymd(new Date(y,m,0))};
   }
-  if(p.kind==="today")return {start:today(),end:today()};
+  if(p.kind==="date"||p.kind==="today"){const d=p.date||today();return {start:d,end:d};}
   if(p.kind==="week"){const st=p.start||startOfWeek();return {start:st,end:addDays(st,6)};}
   if(p.kind==="year"){const y=p.year||currentYear();return {start:`${y}-01-01`,end:`${y}-12-31`};}
   if(p.kind==="custom")return {start:p.start||"0000-00-00",end:p.end||"9999-99-99"};
@@ -196,7 +201,7 @@ const periodRange=p=>{
 };
 const periodLabel=p=>{
   if(!p||p.kind==="month")return monthLabel(p?.month||curMo());
-  if(p.kind==="today")return "Today";
+  if(p.kind==="date"||p.kind==="today")return new Date(p.date||today()).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
   if(p.kind==="week"){const r=periodRange(p);return `${new Date(r.start).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}–${new Date(r.end).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}`;}
   if(p.kind==="year")return String(p.year||currentYear());
   if(p.kind==="all")return "All time";
@@ -205,8 +210,15 @@ const periodLabel=p=>{
 };
 const shiftPeriod=(p,dir)=>{
   if(!p||p.kind==="month")return {kind:"month",month:dir>0?nextMo(p?.month||curMo()):prevMo(p?.month||curMo())};
+  if(p.kind==="date"||p.kind==="today")return {kind:"date",date:addDays(p.date||today(),dir)};
   if(p.kind==="week")return {kind:"week",start:addDays(p.start||startOfWeek(),dir*7)};
   if(p.kind==="year")return {kind:"year",year:(p.year||currentYear())+dir};
+  return p;
+};
+const convertPeriod=(p,kind)=>{
+  if(kind==="date")return {kind:"date",date:dateFromPeriod(p)};
+  if(kind==="month")return {kind:"month",month:monthFromPeriod(p)};
+  if(kind==="year")return {kind:"year",year:yearFromPeriod(p)};
   return p;
 };
 const periodTxns=(txns,p)=>{const r=periodRange(p);if(!r)return txns;return txns.filter(t=>t.date>=r.start&&t.date<=r.end);};
@@ -573,8 +585,9 @@ function Main({data,persist,pin}){
    OVERVIEW TAB — 1Money-style summary
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
-  const[month,setMonth]=useState(curMo());
-  const txns=data.transactions.filter(t=>mkKey(t.date)===month);
+  const[period,setPeriod]=useState({kind:"month",month:curMo()});
+  const txns=periodTxns(data.transactions,period);
+  const month=period.kind==="month"?period.month:curMo();
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const savings=income-expense;
@@ -582,17 +595,27 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
   const trendData=useMemo(()=>{
-    const out=[];const now=new Date();
-    for(let i=5;i>=0;i--){
-      const d=new Date(now.getFullYear(),now.getMonth()-i,1);
-      const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-      const mt=data.transactions.filter(t=>mkKey(t.date)===mk);
-      out.push({m:shortMo(mk),income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),expense:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});
+    const out=[];
+    if(period.kind==="year"){
+      const y=period.year||currentYear();
+      for(let m=1;m<=12;m++){
+        const mk=`${y}-${String(m).padStart(2,"0")}`;
+        const mt=data.transactions.filter(t=>mkKey(t.date)===mk);
+        out.push({m:shortMo(mk),income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),expense:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});
+      }
+    }else{
+      const base=new Date(`${month}-01`);
+      for(let i=5;i>=0;i--){
+        const d=new Date(base.getFullYear(),base.getMonth()-i,1);
+        const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+        const mt=data.transactions.filter(t=>mkKey(t.date)===mk);
+        out.push({m:shortMo(mk),income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),expense:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});
+      }
     }
     return out;
-  },[data]);
+  },[data,period,month]);
   return(<div style={Screen}>
-    <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
+    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
     <div style={{padding:"16px 18px 8px"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         <SoftBalance label="Starting balance" value={inr(netWorth-savings)}/>
@@ -654,12 +677,12 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const pieData=rows.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),raw:r.name,value:r.value}));
-  const budgetMonth=period.kind==="month"?period.month:curMo();
+  const budgetMonth=period.kind==="month"?period.month:period.kind==="date"?monthFromDate(period.date):curMo();
   const periodBudget={...(data.budgets||{}),...((data.budgetOverrides||{})[budgetMonth]||{})};
   const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name)});
   const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",paddingBottom:58}}>
-    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
+    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{height:"calc(100dvh - 164px)",minHeight:0,overflow:"hidden",padding:"6px 8px 0",display:"flex",flexDirection:"column"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:2,alignItems:"start",height:76,flexShrink:0}}>
         {top.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
@@ -685,13 +708,13 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
    TRANSACTIONS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
-  const[month,setMonth]=useState(curMo());
+  const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const[search,setSearch]=useState("");
-  const monthTxns=data.transactions.filter(t=>mkKey(t.date)===month).sort((a,b)=>b.date.localeCompare(a.date));
-  const filtered=monthTxns.filter(t=>!search||[t.note,t.category,t.desc].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
+  const periodList=periodTxns(data.transactions,period).sort((a,b)=>b.date.localeCompare(a.date));
+  const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
   const startBal=netWorth-filtered.reduce((s,t)=>s+(t.type==="income"?+t.amount:t.type==="expense"?-t.amount:0),0);
   return(<div style={Screen}>
-    <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
+    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
     <div style={{padding:"16px 18px 8px"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
@@ -699,7 +722,7 @@ function EntriesTab({data,delTxn,exportCSV,expCats,setModal,netWorth}){
         <SoftBalance label="Ending balance" value={inr(netWorth)}/>
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
-        <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{monthLabel(month)}</div></div>
+        <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{periodLabel(period)}</div></div>
       </div>:<div style={{display:"grid",gap:9}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isInc=t.type==="income",isX=t.type==="transfer";return <div key={t.id} style={TransactionRow}>
         <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:800,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button><button onClick={()=>delTxn(t.id)} style={PlainSmall}>×</button>
       </div>})}</div>}
@@ -858,23 +881,29 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
 /* ── 1Money-style UI helpers ───────────────────────────────────── */
 const Screen={minHeight:"100dvh",background:C.bg,paddingBottom:66,overflowX:"hidden"};
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
-const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",fontSize:25,fontWeight:300,cursor:"pointer",lineHeight:1};
+const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
-function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right}){
+function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes}){
   const p=period||{kind:"month",month:month||curMo()};
   const hasPeriod=!!(period||month);
   const shift=dir=>setPeriod?setPeriod(shiftPeriod(p,dir)):setMonth&&setMonth(dir>0?nextMo(month):prevMo(month));
-  const cyclePeriod=()=>{if(!setPeriod)return;setPeriod(p.kind==="month"?{kind:"today"}:p.kind==="today"?{kind:"year",year:currentYear()}:{kind:"month",month:curMo()});};
-  const mini=p.kind==="today"?String(new Date().getDate()):p.kind==="year"?"Y":"1";
+  const modes=periodModes||[];
+  const cyclePeriod=()=>{
+    if(!setPeriod||!modes.length)return;
+    const k=p.kind==="today"?"date":p.kind;
+    const idx=Math.max(0,modes.indexOf(k));
+    const next=modes[(idx+1)%modes.length];
+    setPeriod(convertPeriod(p,next));
+  };
   const lab=period?periodLabel(p):monthLabel(month);
   return(<div style={{position:"sticky",top:0,zIndex:15,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
     <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
       <HeaderAvatar/><div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:650}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></div>{right||<span/>}
     </div>
     {hasPeriod&&<div style={{display:"grid",gridTemplateColumns:"38px 1fr 38px",alignItems:"center",marginTop:9}}>
-      <button onClick={()=>shift(-1)} style={HeaderArrow}>≪</button>
-      <button onClick={cyclePeriod} style={{justifySelf:"center",maxWidth:"min(255px,74vw)",border:"none",background:C.active,borderRadius:999,padding:"6px 13px",fontSize:14,fontWeight:950,color:C.ink,display:"flex",alignItems:"center",justifyContent:"center",gap:10,cursor:setPeriod?"pointer":"default",whiteSpace:"nowrap",boxShadow:"inset 0 0 0 1px rgba(108,92,231,.05)"}}><span style={{border:"3px solid #222331",borderRadius:12,padding:"2px 7px",fontSize:14,lineHeight:1}}>{mini}</span><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{String(lab).toUpperCase()}</span></button>
-      <button onClick={()=>shift(1)} style={HeaderArrow}>≫</button>
+      <button onClick={()=>shift(-1)} style={HeaderArrow} aria-label="Previous"><ChevronLeft size={24}/></button>
+      <button onClick={cyclePeriod} style={{justifySelf:"center",maxWidth:"min(255px,74vw)",border:"none",background:C.active,borderRadius:999,padding:"8px 18px",fontSize:14,fontWeight:950,color:C.ink,display:"flex",alignItems:"center",justifyContent:"center",gap:8,cursor:setPeriod?"pointer":"default",whiteSpace:"nowrap",boxShadow:"inset 0 0 0 1px rgba(108,92,231,.05)",letterSpacing:".01em"}}><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{String(lab).toUpperCase()}</span></button>
+      <button onClick={()=>shift(1)} style={HeaderArrow} aria-label="Next"><ChevronRight size={24}/></button>
     </div>}
   </div>)
 }
