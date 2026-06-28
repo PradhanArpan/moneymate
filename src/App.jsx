@@ -701,7 +701,7 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
     <div style={{padding:"16px 18px 8px"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         <SoftBalance label="Starting balance" value={inr(netWorth-savings)}/>
-        <SoftBalance label="Ending balance" value={inr(endingBal)}/>
+        <SoftBalance label="Ending balance" value={inr(netWorth)}/>
       </div>
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:800}}>Overview</div><div style={{fontSize:22,color:C.muted,fontWeight:800}}>{inr(savings)}</div></div>
@@ -759,8 +759,9 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const pieData=rows.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),raw:r.name,value:r.value}));
+  const pieColorMap=Object.fromEntries(pieData.map((r,i)=>[mainCategory(r.raw),C.charts[i%C.charts.length]]));
   const periodBudget=budgetMapForPeriod(data,period);
-  const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name)});
+  const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name),fillColor:pieColorMap[mainCategory(r.name)]||C.charts[(visible.findIndex(v=>mainCategory(v.name)===mainCategory(r.name))+C.charts.length)%C.charts.length]});
   const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",overflowY:"hidden",overscrollBehavior:"none",paddingBottom:58}}>
     <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
@@ -802,14 +803,14 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
   const periodList=periodTxns(data.transactions,period).filter(t=>txnMatchesAccount(t,accountFilter)).sort((a,b)=>b.date.localeCompare(a.date));
   const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
   const endingBal=accountFilter==="all"?netWorth:(balances?.[accountFilter]||0);
-  const startBal=endingBal-filtered.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter),0);
+  const startBal=endingBal-periodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter),0);
   return(<div style={Screen}>
     <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
     <div style={{padding:"16px 18px 8px"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
         <SoftBalance label="Starting balance" value={inr(startBal)}/>
-        <SoftBalance label="Ending balance" value={inr(netWorth)}/>
+        <SoftBalance label="Ending balance" value={inr(endingBal)}/>
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
@@ -1094,7 +1095,7 @@ function buildCategoryWheel(rows,cats){
 }
 const CircleBase={width:50,height:50,borderRadius:"50%",display:"grid",placeItems:"center",margin:"5px auto 5px",boxShadow:"0 8px 18px rgba(33,31,58,.06)"};
 function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false}){
-  const color=C.charts[index%C.charts.length];
+  const color=row.fillColor||C.charts[index%C.charts.length];
   const sz=tiny?45:compact?46:56;
   const budget=+row.budget||0;
   const spent=+row.value||0;
@@ -1102,13 +1103,13 @@ function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false
   const over=budget>0&&spent>budget;
   const fill=over?"linear-gradient(180deg,#FFB3C1,#F06D88)":`linear-gradient(180deg,${color}55,${color})`;
   return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?66:"100%",maxWidth:side?66:78,justifySelf:"center"}}>
-    <div style={{fontSize:tiny?10.5:compact?11.5:12,fontWeight:900,color:budget?C.ink:C.muted,whiteSpace:"nowrap",letterSpacing:"-.02em"}}>{inr(budget)}</div>
+    <div style={{fontSize:tiny?9.7:10.8,fontWeight:950,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.05,letterSpacing:"-.02em"}}>{catLabel(row.name)}</div>
+    <div title="Budget" style={{fontSize:tiny?9.4:10.5,fontWeight:650,color:C.muted,whiteSpace:"nowrap",lineHeight:1.05,marginTop:1}}>{inr(budget)}</div>
     <div style={{width:sz,height:sz,borderRadius:"50%",margin:"3px auto 4px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",color,border:`1px solid ${over?"rgba(233,77,106,.42)":`${color}18`}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
       <div style={{position:"absolute",left:0,right:0,bottom:0,height:`${pct}%`,background:fill,opacity:.88,transition:"height .25s ease"}}/>
       <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:tiny?20:23,filter:pct>48?"drop-shadow(0 1px 2px rgba(255,255,255,.65))":"none"}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</div>
     </div>
-    <div title="Expense this period" style={{fontSize:tiny?11.2:12.5,fontWeight:950,color:over?C.expense:(spent?C.ink:C.muted),whiteSpace:"nowrap",lineHeight:1.05}}>{inr(spent)}</div>
-    <div style={{fontSize:tiny?9.5:10.5,fontWeight:850,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
+    <div title="Expense this period" style={{fontSize:tiny?10.2:11.5,fontWeight:650,color:C.muted,whiteSpace:"nowrap",lineHeight:1.05}}>{inr(spent)}</div>
   </button>);
 }
 function BudgetFillBubble({row,index=0,onClick}){
