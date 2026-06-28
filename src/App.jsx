@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v7.4 Account Icons + Account Transactions
+   MONEYMATE  ·  Smart Money Tracker  ·  v7.8 Import Safety + Category Budget
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -455,8 +455,12 @@ const cleanDescForKey=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"").sl
 const importDupKey=(accId,r)=>`${accId}|${r.date}|${(+r.amount).toFixed(2)}|${r.type}|${cleanDescForKey(r.desc||r.note)}`;
 function rowConfidence(r){
   if(r.duplicate)return {label:"Duplicate",tone:C.muted,bg:C.bg,rank:3};
+  if(r.balanceIssue)return {label:"Balance check",tone:C.expense,bg:C.softExpense,rank:2};
+  if(r.ocr&&(!r.desc||String(r.desc).length<8))return {label:"Low OCR confidence",tone:C.expense,bg:C.softExpense,rank:2};
+  if(r.transferPair)return {label:"Possible own transfer",tone:C.xfer,bg:"#EEF3FF",rank:1};
   if(r.type==="transfer"&&!r.xferToId)return {label:"Review transfer",tone:C.xfer,bg:"#EEF3FF",rank:1};
   if(r.category==="Other"||!r.category)return {label:"Check category",tone:C.warn,bg:"#FFF8E8",rank:1};
+  if(r.ocr)return {label:"OCR row — review",tone:C.warn,bg:"#FFF8E8",rank:1};
   if(r.recurMatch)return {label:"Recurring match",tone:C.brand,bg:C.brandDim,rank:0};
   return {label:"Looks OK",tone:C.income,bg:C.softIncome,rank:0};
 }
@@ -466,7 +470,42 @@ function summarizeImportRows(rows=[]){
   const dup=rows.filter(r=>r.duplicate).length;
   const review=rows.filter(r=>rowConfidence(r).rank>0&&!r.duplicate).length;
   const withBal=rows.filter(r=>typeof r.balance==="number"&&isFinite(r.balance));
-  return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length};
+  const balanceIssues=rows.filter(r=>r.balanceIssue).length;
+  const transferPairs=rows.filter(r=>r.transferPair).length;
+  const lowOcr=rows.filter(r=>r.ocr&&rowConfidence(r).rank>0).length;
+  return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length,balanceIssues,transferPairs,lowOcr};
+}
+const amountEffect=r=>r.type==="income"?(+r.amount||0):-(+r.amount||0);
+function balanceAuditRows(rows=[]){
+  const b=rows.map((r,i)=>({...r,_i:i,balance:+r.balance})).filter(r=>Number.isFinite(r.balance));
+  if(b.length<2)return {checked:0,issues:0,mode:"none",bad:new Set()};
+  const score=(reverse=false)=>{let issues=0,checked=0,bad=new Set();
+    for(let i=0;i<b.length-1;i++){const cur=b[i],other=b[i+1];const diff=reverse?cur.balance-other.balance:other.balance-cur.balance;const ok=Math.abs(diff-amountEffect(reverse?cur:other))<=Math.max(Math.abs(reverse?cur.amount:other.amount)*0.02,2);checked++;if(!ok){issues++;bad.add((reverse?cur:other)._i);}}
+    return {checked,issues,bad};
+  };
+  const rev=score(true),fwd=score(false);const best=rev.issues<=fwd.issues?{...rev,mode:"reverse"}:{...fwd,mode:"forward"};return best;
+}
+function extractStatementSerials(lines=[]){
+  const nums=[];
+  lines.forEach(l=>{const m=String(l||"").match(/^\s*(\d{1,4})\s+(?:(\d{1,2})[\/\-.]|(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))/i);if(m)nums.push(+m[1]);});
+  const max=nums.length?Math.max(...nums):0;const missing=[];if(max&&nums.length>=2){const set=new Set(nums);for(let i=1;i<=max;i++)if(!set.has(i))missing.push(i);}
+  return {found:nums.length,max,missing};
+}
+function skippedLineCandidates(lines=[],rows=[]){
+  const keys=new Set(rows.map(r=>`${r.date}|${(+r.amount||0).toFixed(2)}`));
+  const out=[];
+  for(const line of lines){const dm=line.match(DRE)||line.match(DRE2);if(!dm)continue;const date=toISO(dm[1],dm[2],dm[3]);const amts=(line.match(ARE)||[]).map(a=>parseFloat(a.replace(/,/g,""))).filter(v=>v>0);if(!date||!amts.length)continue;const maybe=amts.length>1?amts[amts.length-2]:amts[0];const k=`${date}|${maybe.toFixed(2)}`;if(!keys.has(k))out.push({line:String(line).slice(0,140),date,amount:maybe,reason:"Could not match to parsed row"});if(out.length>=12)break;}
+  return out;
+}
+function statementFingerprint(profile={},summary={},fileName=""){
+  return [profile.bank||"unknown",profile.accountLast4||"",profile.period||"",summary.count||0,Math.round(summary.debit||0),Math.round(summary.credit||0),String(fileName||"").replace(/\s+/g,"_").slice(0,32)].join("|");
+}
+function getStatementFps(){try{return JSON.parse(localStorage.getItem("mm:statementFingerprints")||"[]");}catch{return []}}
+function saveStatementFp(fp){if(!fp)return;const arr=[fp,...getStatementFps().filter(x=>x!==fp)].slice(0,60);localStorage.setItem("mm:statementFingerprints",JSON.stringify(arr));}
+function findTransferPair(row,targetAcc,data){
+  const amt=+row.amount||0;if(!amt)return null;const dt=new Date(row.date).getTime();
+  const opposite=row.type==="expense"?"income":row.type==="income"?"expense":"";if(!opposite)return null;
+  return (data.transactions||[]).find(t=>t.accountId!==targetAcc&&t.type===opposite&&Math.abs((+t.amount||0)-amt)<=1&&Math.abs(new Date(t.date).getTime()-dt)<=2*86400000)||null;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1057,12 +1096,13 @@ function CategoryBubble({row,index=0,onClick,compact=false,tiny=false,side=false
   const over=budget>0&&spent>budget;
   const fill=over?"linear-gradient(180deg,#FFB3C1,#F06D88)":`linear-gradient(180deg,${color}55,${color})`;
   return(<button onClick={onClick} style={{border:"none",background:"transparent",padding:0,textAlign:"center",cursor:"pointer",minWidth:0,width:side?74:"100%",maxWidth:side?74:86,justifySelf:"center"}}>
-    <div style={{fontSize:tiny?12:compact?12:14,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
-    <div style={{width:sz,height:sz,borderRadius:"50%",margin:"5px auto 5px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",color,border:`1px solid ${over?"rgba(233,77,106,.42)":`${color}18`}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
+    <div style={{fontSize:tiny?11.5:compact?12:13,fontWeight:900,color:budget?C.ink:C.muted,whiteSpace:"nowrap",letterSpacing:"-.02em"}}>{inr(budget)}</div>
+    <div style={{width:sz,height:sz,borderRadius:"50%",margin:"3px auto 4px",position:"relative",overflow:"hidden",background:"rgba(255,255,255,.34)",color,border:`1px solid ${over?"rgba(233,77,106,.42)":`${color}18`}`,boxShadow:over?"0 8px 18px rgba(233,77,106,.13)":"0 8px 18px rgba(33,31,58,.06)"}}>
       <div style={{position:"absolute",left:0,right:0,bottom:0,height:`${pct}%`,background:fill,opacity:.88,transition:"height .25s ease"}}/>
       <div style={{position:"absolute",inset:0,display:"grid",placeItems:"center",fontSize:tiny?22:24,filter:pct>48?"drop-shadow(0 1px 2px rgba(255,255,255,.65))":"none"}}>{CAT_EMOJI[mainCategory(row.name)]||"📌"}</div>
     </div>
-    <div title="Expense this period" style={{fontSize:tiny?12.5:13,fontWeight:950,color:over?C.expense:(spent?C.ink:C.muted),whiteSpace:"nowrap"}}>{inr(spent)}</div>
+    <div title="Expense this period" style={{fontSize:tiny?12.5:13,fontWeight:950,color:over?C.expense:(spent?C.ink:C.muted),whiteSpace:"nowrap",lineHeight:1.05}}>{inr(spent)}</div>
+    <div style={{fontSize:tiny?10.5:11,fontWeight:850,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",letterSpacing:"-.01em"}}>{catLabel(row.name)}</div>
   </button>);
 }
 function BudgetFillBubble({row,index=0,onClick}){
@@ -1689,6 +1729,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
   const[step,setStep]=useState("pick");const[file,setFile]=useState(null);const[pwd,setPwd]=useState("");const[needPwd,setNP]=useState(false);
   const[accId,setAId]=useState(data.accounts.filter(a=>a.type!=="Loan")[0]?.id||"");
   const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);const[profile,setProfile]=useState(null);const[summary,setSummary]=useState(null);
+  const[importReport,setImportReport]=useState(null);
   const[ocrProg,setOcrProg]=useState("");
   const[skipped,setSkipped]=useState([]);const[showSkipped,setShowSkipped]=useState(false);
   const[carryoverDate,setCOD]=useState("");const[carryoverAmt,setCOA]=useState("");const[showCarryover,setSC]=useState(false);
@@ -1697,7 +1738,8 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
     try{const lib=await loadPdf(),buf=await file.arrayBuffer();let pdf;
       try{pdf=await lib.getDocument({data:buf,password:pwd||undefined}).promise;}
       catch(e){if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setNP(true);setErr(pwd?"Wrong password — try again.":"PDF is password-protected. I tried the filename password if available. Please check or edit the password.");setStep("pick");return;}throw e;}
-      let lines=await extractLines(pdf);let blob=lines.join(" ");
+      const pagesTotal=pdf.numPages||0;let readMode="PDF text";
+      let lines=await extractLines(pdf);let rawLineCount=lines.length;let ocrLineCount=0;let blob=lines.join(" ");
       let prof=detectStatementProfile(lines,file.name);setProfile(prof);
       let hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
       let parsed=[];let needsOcr=false;let textParseError=null;
@@ -1708,7 +1750,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       if(!parsed.length&&blob.trim().length<600)needsOcr=true;
       if(needsOcr){
         setStep("ocr");setOcrProg(hdfcLikely?"HDFC scan detected. Starting OCR…":"Scanned PDF detected. Starting OCR…");
-        const ocrLines=await extractOcrLines(pdf,setOcrProg);
+        const ocrLines=await extractOcrLines(pdf,setOcrProg);ocrLineCount=ocrLines.length;readMode="OCR";
         const merged=mergeOcrTransactionLines(ocrLines);
         lines=merged.length?merged:ocrLines;blob=lines.join(" ");
         prof=detectStatementProfile(lines,file.name);setProfile({...prof,mode:"OCR"});
@@ -1718,9 +1760,16 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       }else if(textParseError){throw textParseError;}
       if(!parsed.length){setErr("Could not confidently read transactions. OCR may need a clearer scan. Try a sharper statement copy, or split a long PDF and import in parts.");setStep("pick");return;}
       const targetAcc=hit?.id||accId;
+      const serialStats=extractStatementSerials(lines);
+      const audit=balanceAuditRows(parsed);
       const existingKeys=new Set(data.transactions.map(t=>importDupKey(t.accountId,{...t,desc:t.note})));
-      const withXfer=parsed.map(r=>{const type=r.isXfer?"transfer":r.type;const row={...r,type,category:type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.subcategory||firstSub(mainCategory(r.category),type),duplicate:existingKeys.has(importDupKey(targetAcc,{...r,type}))};return {...row,include:!row.duplicate,confidence:rowConfidence(row)};});
-      setRows(withXfer);setSummary(summarizeImportRows(withXfer));
+      const withXfer=parsed.map((r,idx)=>{const type=r.isXfer?"transfer":r.type;const pair=findTransferPair({...r,type},targetAcc,data);const row={...r,type,category:type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.subcategory||firstSub(mainCategory(r.category),type),duplicate:existingKeys.has(importDupKey(targetAcc,{...r,type})),balanceIssue:audit.bad?.has(idx),transferPair:pair?{accountId:pair.accountId,date:pair.date,amount:pair.amount}:null};return {...row,include:!row.duplicate&&!row.balanceIssue,confidence:rowConfidence(row)};});
+      const sum=summarizeImportRows(withXfer);
+      const skippedRows=skippedLineCandidates(lines,withXfer);
+      const fp=statementFingerprint(prof,sum,file.name);
+      const duplicateStatement=getStatementFps().includes(fp);
+      setImportReport({pagesRead:pagesTotal,pagesTotal,rawLineCount,ocrLineCount,readMode,serialStats,balanceChecked:audit.checked,balanceIssues:audit.issues,balanceMode:audit.mode,skippedRows,fingerprint:fp,duplicateStatement});
+      setRows(withXfer);setSummary(sum);
       const hasExisting=data.transactions.some(t=>t.accountId===targetAcc);
       if(!hasExisting&&withXfer.length>0){const sorted=[...withXfer].sort((a,b)=>a.date.localeCompare(b.date));setCOD(prevDay(sorted[0].date));setSC(true);setStep("carryover");}
       else setStep("review");
@@ -1731,7 +1780,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
     const fresh=[],skip=[];
     if(showCarryover&&carryoverAmt&&+carryoverAmt>0)fresh.push({id:uid(),type:"income",amount:+carryoverAmt,category:"Other Income",subcategory:"Adjustment",accountId:accId,date:carryoverDate,note:"Opening balance carryover",source:"carryover"});
     rows.filter(r=>r.include).forEach(r=>{const k=importDupKey(accId,r);if(ex.has(k)){skip.push(r);return;}ex.add(k);fresh.push({id:uid(),type:r.type,amount:r.amount,category:r.type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.type==="transfer"?"":(r.subcategory||firstSub(r.category,r.type)),accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"import",recurring:!!r.recurMatch});});
-    importBatch(fresh);setSkipped(skip);setRes({added:fresh.length-(showCarryover&&carryoverAmt&&+carryoverAmt>0?1:0),skipped:skip.length,carryover:showCarryover&&+carryoverAmt>0});setStep("done");
+    importBatch(fresh);if(importReport?.fingerprint)saveStatementFp(importReport.fingerprint);setSkipped([...(importReport?.skippedRows||[]),...skip]);setRes({added:fresh.length-(showCarryover&&carryoverAmt&&+carryoverAmt>0?1:0),skipped:skip.length+(importReport?.skippedRows?.length||0),carryover:showCarryover&&+carryoverAmt>0});setStep("done");
   };
   const toggle=k=>setRows(rows.map(r=>r.key===k?{...r,include:!r.include}:r));
   const setType=k=>t=>setRows(rows.map(r=>{if(r.key!==k)return r;const nr={...r,type:t,category:t==="transfer"?"Transfer":(t==="income"?"Salary":"Other")};return {...nr,confidence:rowConfidence(nr)};}));
@@ -1770,10 +1819,16 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
           <div><b style={{color:C.ink}}>Credits:</b> {inr(summary?.credit||0)}</div>
           <div><b style={{color:C.ink}}>Duplicates:</b> {summary?.duplicates||0}</div>
           <div><b style={{color:C.ink}}>Review:</b> {summary?.review||0}</div>
+          <div><b style={{color:C.ink}}>Pages:</b> {importReport?`${importReport.pagesRead}/${importReport.pagesTotal}`:"—"}</div>
+          <div><b style={{color:C.ink}}>Mode:</b> {importReport?.readMode||profile?.mode||"PDF text"}</div>
+          <div><b style={{color:C.ink}}>Balance:</b> {importReport?`${importReport.balanceIssues||0}/${importReport.balanceChecked||0} issues`:"—"}</div>
+          <div><b style={{color:C.ink}}>Skipped:</b> {importReport?.skippedRows?.length||0}</div>
         </div>
         {profile?.period&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Period: {profile.period}</div>}
+        {importReport?.serialStats?.max>0&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Statement row numbers detected: {importReport.serialStats.found} / up to {importReport.serialStats.max}{importReport.serialStats.missing?.length?` · Missing serials: ${importReport.serialStats.missing.slice(0,8).join(", ")}${importReport.serialStats.missing.length>8?"…":""}`:""}</div>}
+        {importReport?.duplicateStatement&&<div style={{fontSize:11,color:C.expense,marginTop:6,fontWeight:900}}>⚠️ This looks like a statement already imported earlier. Import only after checking duplicates.</div>}
         {profile?.mode&&<div style={{fontSize:11,color:C.warn,marginTop:6}}>Read mode: {profile.mode} — review carefully before import.</div>}
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check blue “Review transfer” rows before import. Duplicate rows are unticked automatically.</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check “Possible own transfer”, “Balance check” and OCR rows before import. Duplicate/problem rows are unticked automatically.</div>
       </div>
       <L>Account</L><select style={F} value={accId} onChange={e=>setAId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
       <div style={{display:"grid",gap:8,maxHeight:"44vh",overflowY:"auto"}}>
@@ -1787,6 +1842,8 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
             <span style={{fontFamily:"Inter,system-ui,sans-serif",fontSize:13,fontWeight:900,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense,flexShrink:0}}>{r.type==="income"?"+":r.type==="transfer"?"↔":"−"}{inr(r.amount)}</span>
           </div>
           {r.confidence&&<div style={{display:"inline-flex",alignItems:"center",marginTop:7,padding:"3px 8px",borderRadius:999,background:r.confidence.bg,color:r.confidence.tone,fontSize:10,fontWeight:900}}>{r.confidence.label}</div>}
+          {r.transferPair&&<div style={{fontSize:10.5,color:C.xfer,marginTop:5,fontWeight:800}}>Matched similar entry in another account on {r.transferPair.date}. Check if this should be a transfer.</div>}
+          {r.balanceIssue&&<div style={{fontSize:10.5,color:C.expense,marginTop:5,fontWeight:800}}>Balance reconciliation did not match for this row.</div>}
           {r.include&&<div style={{display:"grid",gap:4,marginTop:8}}>
             <div style={{display:"flex",gap:6}}>
               <select value={r.type} onChange={e=>setType(r.key)(e.target.value)} style={{...F,marginBottom:0,padding:"5px 8px",fontSize:11,flex:1}}><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
@@ -1804,7 +1861,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       <div style={{fontSize:16,fontWeight:700,color:C.ink}}>{res.added} transaction{res.added===1?"":"s"} imported</div>
       {res.skipped>0&&<div style={{fontSize:13,color:C.muted,marginTop:6}}>{res.skipped} duplicate{res.skipped===1?"":"s"} skipped</div>}
       {skipped.length>0&&<button onClick={()=>setShowSkipped(!showSkipped)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 14px",fontSize:12,color:C.muted,cursor:"pointer",marginTop:8}}>{showSkipped?"Hide":"View"} skipped</button>}
-      {showSkipped&&<div style={{textAlign:"left",marginTop:10,display:"grid",gap:6,maxHeight:"25vh",overflowY:"auto"}}>{skipped.map((r,i)=><div key={i} style={{background:C.bg,borderRadius:8,padding:"8px 10px",fontSize:11}}><div style={{fontWeight:600,color:C.muted}}>{r.desc}</div><div style={{color:C.muted}}>{r.date} · {inr(r.amount)}</div></div>)}</div>}
+      {showSkipped&&<div style={{textAlign:"left",marginTop:10,display:"grid",gap:6,maxHeight:"25vh",overflowY:"auto"}}>{skipped.map((r,i)=><div key={i} style={{background:C.bg,borderRadius:8,padding:"8px 10px",fontSize:11}}><div style={{fontWeight:700,color:C.muted}}>{r.desc||r.line||"Skipped row"}</div><div style={{color:C.muted}}>{r.reason?`${r.reason} · `:""}{r.date||""}{r.amount?` · ${inr(r.amount)}`:""}</div></div>)}</div>}
       <button onClick={close} style={{...SB,marginTop:12}}>Done</button>
     </div>}
   </Sheet>);
