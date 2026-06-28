@@ -323,6 +323,49 @@ const loadPdf=()=>new Promise((res,rej)=>{
   s.onerror=()=>rej(new Error("PDF reader failed to load"));
   document.head.appendChild(s);
 });
+const OCRCDN="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+const loadOcr=()=>new Promise((res,rej)=>{
+  if(window.Tesseract)return res(window.Tesseract);
+  const s=document.createElement("script");s.src=OCRCDN;
+  s.onload=()=>window.Tesseract?res(window.Tesseract):rej(new Error("OCR reader failed to load"));
+  s.onerror=()=>rej(new Error("OCR reader failed to load"));
+  document.head.appendChild(s);
+});
+async function extractOcrLines(pdf,onProgress=()=>{}){
+  const T=await loadOcr();
+  const lines=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    onProgress(`OCR page ${p} of ${pdf.numPages}…`);
+    const page=await pdf.getPage(p);
+    const viewport=page.getViewport({scale:2.2});
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+    const ctx=canvas.getContext("2d",{willReadFrequently:true});
+    await page.render({canvasContext:ctx,viewport}).promise;
+    const dataUrl=canvas.toDataURL("image/png");
+    const result=await T.recognize(dataUrl,"eng",{logger:m=>{
+      if(m.status==="recognizing text"&&typeof m.progress==="number")onProgress(`OCR page ${p}/${pdf.numPages}: ${Math.round(m.progress*100)}%`);
+    }});
+    String(result?.data?.text||"").split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean).forEach(x=>lines.push(x));
+  }
+  onProgress("OCR complete. Preparing review…");
+  return lines;
+}
+const looksLikeTxnStart=l=>DRE.test(l)||DRE2.test(l)||/^\s*\d+\s+\d{1,2}[\/\-.]/.test(l)||/^\s*\d{1,2}[\/\-.]/.test(l);
+function mergeOcrTransactionLines(lines=[]){
+  const merged=[];let cur="";
+  for(const raw of lines){
+    const l=String(raw||"").replace(/[|]/g," ").replace(/₹/g," ").replace(/\s+/g," ").trim();
+    if(!l)continue;
+    if(/^(page|statement|account statement|generated|date\b|narration|particulars|withdrawal|deposit|balance)/i.test(l))continue;
+    const txStart=looksLikeTxnStart(l);
+    if(txStart&&cur)merged.push(cur);
+    cur=txStart?l:(cur?`${cur} ${l}`:l);
+    if(cur.length>380){merged.push(cur);cur="";}
+  }
+  if(cur)merged.push(cur);
+  return merged;
+}
 async function extractLines(pdf){
   const lines=[];
   for(let p=1;p<=pdf.numPages;p++){
@@ -392,9 +435,9 @@ function parseStatement(lines,accounts=[],recurList=[]){
   return out;
 }
 
-function detectStatementProfile(lines=[]){
-  const all=lines.join(" ");
-  const bank=/kotak mahindra|KKBK0/i.test(all)?"Kotak":/hdfc bank|HDFC000|Statement of account/i.test(all)?"HDFC":/state bank of india|SBIN0/i.test(all)?"SBI":/south indian bank|SIBL0/i.test(all)?"South Indian Bank":"Unknown bank";
+function detectStatementProfile(lines=[],fileName=""){
+  const all=[lines.join(" "),fileName].join(" ");
+  const bank=/kotak mahindra|KKBK0|\bkotak\b/i.test(all)?"Kotak":/hdfc bank|HDFC000|Statement of account|\bhdfc\b/i.test(all)?"HDFC":/state bank of india|SBIN0|\bsbi\b/i.test(all)?"SBI":/south indian bank|SIBL0|\bsib\b/i.test(all)?"South Indian Bank":"Unknown bank";
   const acct=(all.match(/Account\s*(?:No|Number|#)\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||all.match(/A\/c\s*No\.?\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||[])[1]||"";
   const last4=(acct.replace(/\D/g,"").slice(-4))||"";
   const from=(all.match(/Statement\s+From\s*[:]?\s*([0-9\/\-]{8,10})/i)||all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/)||[])[1]||"";
@@ -1646,6 +1689,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
   const[step,setStep]=useState("pick");const[file,setFile]=useState(null);const[pwd,setPwd]=useState("");const[needPwd,setNP]=useState(false);
   const[accId,setAId]=useState(data.accounts.filter(a=>a.type!=="Loan")[0]?.id||"");
   const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);const[profile,setProfile]=useState(null);const[summary,setSummary]=useState(null);
+  const[ocrProg,setOcrProg]=useState("");
   const[skipped,setSkipped]=useState([]);const[showSkipped,setShowSkipped]=useState(false);
   const[carryoverDate,setCOD]=useState("");const[carryoverAmt,setCOA]=useState("");const[showCarryover,setSC]=useState(false);
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
@@ -1653,13 +1697,26 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
     try{const lib=await loadPdf(),buf=await file.arrayBuffer();let pdf;
       try{pdf=await lib.getDocument({data:buf,password:pwd||undefined}).promise;}
       catch(e){if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setNP(true);setErr(pwd?"Wrong password — try again.":"PDF is password-protected. I tried the filename password if available. Please check or edit the password.");setStep("pick");return;}throw e;}
-      const lines=await extractLines(pdf);const blob=lines.join(" ");
-      const prof=detectStatementProfile(lines);setProfile(prof);
-      const hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
-      let parsed;
+      let lines=await extractLines(pdf);let blob=lines.join(" ");
+      let prof=detectStatementProfile(lines,file.name);setProfile(prof);
+      let hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
+      let parsed=[];let needsOcr=false;let textParseError=null;
       try{parsed=parseStatement(lines,data.accounts,data.recurring);}
-      catch(e){if(e.scanned){setErr("Scanned/image PDF detected — no text found.\n\nUse a digital e-statement PDF downloaded from netbanking/app, not a scanned/printed PDF.");setStep("pick");return;}throw e;}
-      if(!parsed.length){setErr("No transactions found. Use a digital e-statement from netbanking.");setStep("pick");return;}
+      catch(e){textParseError=e;needsOcr=!!e.scanned;}
+      const hdfcLikely=prof.bank==="HDFC"||/hdfc/i.test(file.name);
+      if(hdfcLikely&&parsed.length<3)needsOcr=true;
+      if(!parsed.length&&blob.trim().length<600)needsOcr=true;
+      if(needsOcr){
+        setStep("ocr");setOcrProg(hdfcLikely?"HDFC scan detected. Starting OCR…":"Scanned PDF detected. Starting OCR…");
+        const ocrLines=await extractOcrLines(pdf,setOcrProg);
+        const merged=mergeOcrTransactionLines(ocrLines);
+        lines=merged.length?merged:ocrLines;blob=lines.join(" ");
+        prof=detectStatementProfile(lines,file.name);setProfile({...prof,mode:"OCR"});
+        hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
+        try{parsed=parseStatement(lines,data.accounts,data.recurring).map(r=>({...r,ocr:true}));}
+        catch(e){parsed=[];}
+      }else if(textParseError){throw textParseError;}
+      if(!parsed.length){setErr("Could not confidently read transactions. OCR may need a clearer scan. Try a sharper statement copy, or split a long PDF and import in parts.");setStep("pick");return;}
       const targetAcc=hit?.id||accId;
       const existingKeys=new Set(data.transactions.map(t=>importDupKey(t.accountId,{...t,desc:t.note})));
       const withXfer=parsed.map(r=>{const type=r.isXfer?"transfer":r.type;const row={...r,type,category:type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.subcategory||firstSub(mainCategory(r.category),type),duplicate:existingKeys.has(importDupKey(targetAcc,{...r,type}))};return {...row,include:!row.duplicate,confidence:rowConfidence(row)};});
@@ -1692,6 +1749,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       <button onClick={parse} disabled={!file} style={{...SB,background:file?C.brand:"#ccc",cursor:file?"pointer":"default"}}>Read Statement</button>
     </>}
     {step==="parsing"&&<p style={{textAlign:"center",color:C.muted,padding:"32px 0"}}>Reading your statement…</p>}
+    {step==="ocr"&&<div style={{textAlign:"center",padding:"28px 0"}}><div style={{fontSize:40,marginBottom:10}}>🔎</div><div style={{fontSize:15,fontWeight:800,color:C.ink}}>OCR reading scanned statement</div><p style={{fontSize:12,color:C.muted,lineHeight:1.5,margin:"8px 12px 0"}}>{ocrProg||"Preparing OCR…"}</p><p style={{fontSize:11,color:C.muted,lineHeight:1.5,margin:"14px 12px 0"}}>This may take a few minutes for HDFC scanned PDFs. Review all rows before importing.</p></div>}
     {step==="carryover"&&<>
       <div style={{background:"#EEF3FF",borderRadius:14,padding:16,marginBottom:16,border:"1px solid #C7D7FF"}}><div style={{fontSize:13,fontWeight:700,color:C.xfer,marginBottom:6}}>📌 First statement for this account</div><div style={{fontSize:13,color:C.ink}}>Statement starts from {rows.length>0?[...rows].sort((a,b)=>a.date.localeCompare(b.date))[0].date:""}. Enter your balance on <b>{carryoverDate}</b> to set the correct opening balance.</div></div>
       <L>Account balance on {carryoverDate} (₹)</L>
@@ -1714,6 +1772,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
           <div><b style={{color:C.ink}}>Review:</b> {summary?.review||0}</div>
         </div>
         {profile?.period&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Period: {profile.period}</div>}
+        {profile?.mode&&<div style={{fontSize:11,color:C.warn,marginTop:6}}>Read mode: {profile.mode} — review carefully before import.</div>}
         <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check blue “Review transfer” rows before import. Duplicate rows are unticked automatically.</div>
       </div>
       <L>Account</L><select style={F} value={accId} onChange={e=>setAId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
