@@ -292,7 +292,20 @@ function evalExpr(s){
 }
 
 /* ── Data model ──────────────────────────────────────────────────── */
-const DEFAULT_ACCOUNTS=[
+const HARDCODED_LIC_ACCOUNTS=[
+  {id:"lic-828805529",name:"LIC's Jeevan Labh",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"828805529",hint:"5529",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:500000,policyTerm:21,premiumPayingTerm:15,commencementDate:"2019-02-28",maturityDate:"2040-02-28",nextPayoutDate:"",premiumAmount:26876,premiumFrequency:"yearly",premiumDueDay:28,premiumStartDate:"2027-02-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:625,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:""},
+  {id:"lic-846654193",name:"New Money Back Plan - 25 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"846654193",hint:"4193",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:200000,policyTerm:25,premiumPayingTerm:20,commencementDate:"2017-03-18",maturityDate:"2042-03-18",nextPayoutDate:"2042-03-18",premiumAmount:5934,premiumFrequency:"halfyearly",premiumDueDay:18,premiumStartDate:"2026-09-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:230,riderSumAssured:200000,linkedBankAccountNumber:"ending 1924",bankName:"KOTAK MAHINDRA BANK LIMITED",bankBranch:"ROURKELA"},
+  {id:"lic-596951289",name:"New Money Back Plan - 20 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596951289",hint:"1289",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:15,commencementDate:"2015-09-28",maturityDate:"2035-09-28",nextPayoutDate:"2035-09-28",premiumAmount:3938,premiumFrequency:"halfyearly",premiumDueDay:28,premiumStartDate:"2026-09-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:120,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
+  {id:"lic-596600835",name:"New Jeevan Anand",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596600835",hint:"0835",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:20,commencementDate:"2014-07-17",maturityDate:"2034-07-17",nextPayoutDate:"",premiumAmount:5804,premiumFrequency:"yearly",premiumDueDay:17,premiumStartDate:"2026-07-17",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:100,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
+];
+function ensureHardcodedLicAccounts(accounts=[]){
+  const existing=new Set((accounts||[]).map(a=>String(a.accountNumber||a.id||"")));
+  const out=[...(accounts||[])];
+  HARDCODED_LIC_ACCOUNTS.forEach(p=>{if(!existing.has(String(p.accountNumber))&&!existing.has(String(p.id))){out.push({...p});existing.add(String(p.accountNumber));existing.add(String(p.id));}});
+  return out;
+}
+
+const DEFAULT_ACCOUNTS=ensureHardcodedLicAccounts([
   {id:"acc-sib",  name:"South Indian Bank",type:"Bank",  opening:0,hint:"0584"},
   {id:"acc-hdfc", name:"HDFC Bank",         type:"Bank",  opening:0,hint:"9712"},
   {id:"acc-sbi1", name:"SBI – 4034",        type:"Bank",  opening:0,hint:"4034"},
@@ -300,14 +313,14 @@ const DEFAULT_ACCOUNTS=[
   {id:"acc-ktk",  name:"Kotak Bank",         type:"Bank",  opening:0,hint:"1924"},
   {id:"acc-loan", name:"SBI Car Loan",       type:"Loan",  loanType:"Car Loan",
    sanctionedAmount:780000,outstandingAmount:576797,opening:0,hint:""},
-];
+]);
 const EMPTY={
   accounts:DEFAULT_ACCOUNTS,transactions:[],budgets:{},
   goals:[],recurring:[],customCats:{expense:[],income:[]},budgetOverrides:{},
 };
 const normalize=d=>({
   ...EMPTY,...d,
-  accounts:d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS,
+  accounts:ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS),
   transactions:(d.transactions||[]).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t),
   recurring:(d.recurring||[]).map(r=>r.type==="expense"||r.type==="income"?{...r,category:mainCategory(r.category),subcategory:r.subcategory||""}:r),
   customCats:{expense:[],income:[],...(d.customCats||{})},
@@ -561,8 +574,8 @@ export default function App(){
   const[pin,setPin]=useState("");const[err,setErr]=useState("");const[data,setData]=useState(EMPTY);
   useEffect(()=>{setPhase(localStorage.getItem("mm:setup")?"lock":"setup");},[]);
   const persist=async(next,p)=>{setData(next);try{localStorage.setItem("mm:data",await encData(next,p||pin));}catch(e){console.error(e);}};
-  const handleSetup=async p=>{try{localStorage.setItem("mm:data",await encData(EMPTY,p));localStorage.setItem("mm:setup","1");}catch(e){console.error(e);}setPin(p);setData(EMPTY);setPhase("app");};
-  const handleUnlock=async p=>{try{const raw=localStorage.getItem("mm:data");const d=raw?await decData(raw,p):EMPTY;setPin(p);setData(d);setErr("");setPhase("app");}catch{setErr("Wrong PIN — try again");}};
+  const handleSetup=async p=>{const d=normalize(EMPTY);try{localStorage.setItem("mm:data",await encData(d,p));localStorage.setItem("mm:setup","1");}catch(e){console.error(e);}setPin(p);setData(d);setPhase("app");};
+  const handleUnlock=async p=>{try{const raw=localStorage.getItem("mm:data");const d=normalize(raw?await decData(raw,p):EMPTY);try{localStorage.setItem("mm:data",await encData(d,p));}catch(e){console.error(e);}setPin(p);setData(d);setErr("");setPhase("app");}catch{setErr("Wrong PIN — try again");}};
   const handleForgot=()=>{if(window.confirm("Delete ALL data permanently?")){localStorage.clear();setPhase("setup");setErr("");}};
   if(phase==="loading")return<div style={{minHeight:"100vh",background:C.dark,display:"grid",placeItems:"center",fontSize:48}}>💰</div>;
   if(phase==="setup")return<PinScreen isSetup onSetup={handleSetup} err={err} setErr={setErr}/>;
