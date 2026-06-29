@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.0 Insurance + SIP Recurring
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.1 LIC Policy Details
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -79,6 +79,8 @@ const CAT_EMOJI = {
   ...Object.fromEntries(TRANSFER_STRUCTURE.map(c=>[c.name,c.emoji])),
   Transfer:"↔️",Cashback:"✨",Adjustments:"📌",Insurance:"🛡️",
 };
+const isInsuranceAccount=a=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(a?.type);
+const policyFrequencyLabel=f=>f==="halfyearly"?"Half-yearly":f==="yearly"?"Yearly":f==="monthly"?"Monthly":(f||"—");
 const mainCategory=n=>CATEGORY_ALIASES[n]||n;
 const subcatsFor=(cat,type="expense")=>SUBCATEGORY_MAP[mainCategory(cat)]||[];
 const firstSub=(cat,type="expense")=>subcatsFor(cat,type)[0]||"";
@@ -671,6 +673,7 @@ function Main({data,persist,pin}){
       {modal?.type==="account"   &&<AccountModal    close={close} addAcc={addAcc} addRec={addRec} data={data} presetType={modal.presetType} title={modal.title}/>} 
       {modal?.type==="credit"    &&<CreditCardModal close={close} addAcc={addAcc}/>} 
       {modal?.type==="loan"      &&<LoanModal       close={close} addAcc={addAcc} presetLoanType={modal.presetLoanType} title={modal.title}/>} 
+      {modal?.type==="policydetail"&&<PolicyDetailsModal close={close} account={modal.account} setModal={M}/>} 
       {modal?.type==="editacc"   &&<EditAccModal    close={close} account={modal.account} editAcc={editAcc} delAcc={delAcc}/>} 
       {modal?.type==="editloan"  &&<EditLoanModal   close={close} account={modal.account} editLoan={editLoan} delAcc={delAcc}/>} 
       {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} editCC={editCC} delAcc={delAcc}/>} 
@@ -882,10 +885,11 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
       const last=paid?`Last Paid ${fmtShortDate(paid.date)}`:"Last Paid —";
       return `${a.ccType||"Credit Card"} · ${due} · ${last}`;
     }
-    if(["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(a.type)){
-      const prem=a.premiumAmount?`Premium ${inr(a.premiumAmount)} ${a.premiumFrequency||"monthly"}`:"Premium not set";
+    if(isInsuranceAccount(a)){
+      const prem=a.premiumAmount?`Premium ${inr(a.premiumAmount)} ${policyFrequencyLabel(a.premiumFrequency)}`:"Premium not set";
+      const next=a.premiumStartDate?`Next ${fmtShortDate(a.premiumStartDate)}`:"Next date not set";
       const mat=a.maturityAmount?`Maturity ${inr(a.maturityAmount)}`:(a.sumAssured?`Cover ${inr(a.sumAssured)}`:"Documentation");
-      return `${a.policyType||a.type} · ${prem} · ${mat}`;
+      return `${a.policyType||a.type} · ${prem} · ${next} · ${mat}`;
     }
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
@@ -931,6 +935,7 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
   const open=()=>{
     if(canOpen)return;
     if(a._goal)return setModal("editgoal",{goal:a._goal});
+    if(isInsuranceAccount(a))return setModal("policydetail",{account:a});
     return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});
   };
   const openEdit=e=>{e.stopPropagation();if(a._goal)return setModal("editgoal",{goal:a._goal});return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});};
@@ -945,6 +950,7 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
       {lastTxn&&!a._goal&&!(a.type==="Loan")&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
       {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button><button onClick={e=>{e.stopPropagation();setModal("paycc",{cc:a});}} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.income,fontWeight:900}}>Pay</button></div>}
+      {isInsuranceAccount(a)&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit policy</button><span style={{fontSize:11.5,color:C.muted,fontWeight:800}}>Tap card for details</span></div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
       {a.type==="Credit Card"&&<CreditCardFuelMeter card={a} value={accountValue(a)}/>} 
       {a._goal&&<GoalFuelMeter goal={a}/>} 
@@ -1544,6 +1550,70 @@ function EditTxnModal({close,txn,data,editTxn,delTxn,addRec,expCats,incCats}){
   </Sheet>);
 }
 
+
+function PolicyDetailsModal({close,account,setModal}){
+  const val=(v,empty="—")=>v!==undefined&&v!==null&&String(v)!==""?v:empty;
+  const money=v=>(+v||0)?inr(+v):"—";
+  const detail=(label,value)=><div style={{padding:"10px 0",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:11.5,color:C.muted,fontWeight:750}}>{label}</div><div style={{fontSize:17,color:C.ink,fontWeight:650,marginTop:3}}>{value}</div></div>;
+  const status=account.status||"Active";
+  return <Sheet close={close} title={account.accountNumber||account.name||"Policy"}>
+    <div style={{margin:"-6px -4px 14px",background:"#EEF2FF",borderRadius:18,padding:16,display:"grid",gap:12}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+        <LogoBadge entity={account} size={54}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:20,fontWeight:850,color:C.ink,lineHeight:1.15}}>{account.name}</div>
+          <div style={{display:"inline-flex",marginTop:8,padding:"4px 12px",borderRadius:999,background:"#DDFBEA",color:"#008A4B",fontWeight:850,fontSize:12}}>{status}</div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+        <div><div style={{fontSize:22}}>💳</div><div style={{fontSize:11,color:C.ink,lineHeight:1.2}}>Flexible premium payment</div></div>
+        <div><div style={{fontSize:22}}>🤲</div><div style={{fontSize:11,color:C.ink,lineHeight:1.2}}>{account.planType?`${account.planType} benefit`:"Protection / savings benefit"}</div></div>
+        <div><div style={{fontSize:22}}>💰</div><div style={{fontSize:11,color:C.ink,lineHeight:1.2}}>{account.policyType==="Health Insurance"?"Health cover":"Maturity / cover tracking"}</div></div>
+      </div>
+    </div>
+    <div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Policy details</div>
+    <div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>
+        {detail("Life insured",val(account.lifeInsured))}
+        {detail("Nominee",val(account.nomineeName,"Not entered"))}
+        {detail("Basic sum assured",money(account.sumAssured))}
+        {detail("Plan type",val(account.planType||account.policyType))}
+        {detail("Policy term",account.policyTerm?`${account.policyTerm} years`:"—")}
+        {detail("Premium paying term",account.premiumPayingTerm?`${account.premiumPayingTerm} years`:"—")}
+        {detail("Commencement date",account.commencementDate?fmtShortDate(account.commencementDate):"—")}
+        {detail("Est. maturity date",account.maturityDate?fmtShortDate(account.maturityDate):"—")}
+        {detail("Next payout date",account.nextPayoutDate?fmtShortDate(account.nextPayoutDate):"—")}
+        {detail("Policy value",money(account.opening))}
+      </div>
+    </div>
+    <div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Premium details</div>
+    <div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>
+        {detail("Installment premium",money(account.premiumAmount))}
+        {detail("Next premium date",account.premiumStartDate?fmtShortDate(account.premiumStartDate):"—")}
+        {detail("Payment mode",policyFrequencyLabel(account.premiumFrequency))}
+        {detail("Auto Pay status",val(account.autoPayStatus,"Not entered"))}
+      </div>
+    </div>
+    {(account.riderName||account.riderPremium||account.riderSumAssured)&&<><div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Rider details</div><div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+      {detail("Name of rider",val(account.riderName))}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>{detail("Rider premium",money(account.riderPremium))}{detail("Rider sum assured",money(account.riderSumAssured))}</div>
+    </div></>}
+    {(account.bankName||account.linkedBankAccountNumber||account.bankBranch)&&<><div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Bank account details</div><div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>
+        {detail("Bank account number",val(account.linkedBankAccountNumber))}
+        {detail("Bank name",val(account.bankName))}
+        {detail("Branch",val(account.bankBranch))}
+        {detail("Premium reminder",account.premiumDueDay?`Day ${account.premiumDueDay}`:"—")}
+      </div>
+    </div></>}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      <button onClick={()=>setModal("editacc",{account})} style={SB}>Edit policy</button>
+      <button onClick={()=>setModal("txn",{entryType:account.type==="Term Insurance"||account.type==="Health Insurance"?"expense":"transfer",accountId:""})} style={{...SB,background:C.brandDim,color:C.brand,boxShadow:"none"}}>Record premium</button>
+    </div>
+  </Sheet>;
+}
+
 function AccountPickerModal({close,setModal}){
   const groups=[
     {title:"Regular",sub:"Cash, Savings",items:[
@@ -1584,7 +1654,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   const allTypes=[...BANK_TYPES,...INVEST_TYPES];
   const isInsuranceType=t=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(t);
   const defaultLogo=presetType==="Health Insurance"||presetType==="Term Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
-  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),maturityAmount:"",maturityDate:"",sumAssured:"",payFromId:"",makeRecurring:false});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false});const s=k=>e=>setF({...f,[k]:e.target.value});
   const isIns=isInsuranceType(f.type);
   const bankOpts=(data?.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Savings");
   const isProtection=f.type==="Term Insurance"||f.type==="Health Insurance"||f.policyType==="Term Insurance"||f.policyType==="Health Insurance";
@@ -1592,7 +1662,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
     if(!f.name)return;
     const id=uid();
     const clean={id,name:f.name,type:f.type,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey};
-    if(isIns){Object.assign(clean,{policyType:f.policyType,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,sumAssured:+f.sumAssured||0});}
+    if(isIns){Object.assign(clean,{status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch});}
     const rec=[];
     if(isIns&&f.makeRecurring&&f.premiumAmount&&f.payFromId){
       const day=+f.premiumDueDay||+String(f.premiumStartDate||today()).slice(8,10)||1;
@@ -1607,14 +1677,29 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[f.type]}/>
     {isIns&&<>
       <L>Policy type</L><select style={F} value={f.policyType} onChange={s("policyType")}>{INSURANCE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+      <L>Status</L><select style={F} value={f.status} onChange={s("status")}><option>Active</option><option>Paid-up</option><option>Matured</option><option>Closed</option></select>
+      <L>Plan type</L><input style={F} value={f.planType} onChange={s("planType")} placeholder="Endowment / Money Back / Term / Health"/>
+      <L>Life insured</L><input style={F} value={f.lifeInsured} onChange={s("lifeInsured")} placeholder="Name of insured person"/>
+      <L>Nominee name</L><input style={F} value={f.nomineeName} onChange={s("nomineeName")} placeholder="Optional"/>
       <L>{isProtection?"Documentation value / surrender value (₹)":"Current / surrender value (₹)"}</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/>
       <L>Premium amount (₹)</L><input style={F} type="number" value={f.premiumAmount} onChange={s("premiumAmount")} placeholder="e.g. 12500"/>
       <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option></select>
       <L>Next / usual premium date</L><input style={F} type="date" value={f.premiumStartDate} onChange={s("premiumStartDate")}/>
       <L>Due day</L><input style={F} type="number" min="1" max="31" value={f.premiumDueDay} onChange={s("premiumDueDay")} placeholder="e.g. 10"/>
       <L>Sum assured / cover (₹)</L><input style={F} type="number" value={f.sumAssured} onChange={s("sumAssured")} placeholder="For term/health cover"/>
+      <L>Policy term (years)</L><input style={F} type="number" value={f.policyTerm} onChange={s("policyTerm")} placeholder="e.g. 20"/>
+      <L>Premium paying term (years)</L><input style={F} type="number" value={f.premiumPayingTerm} onChange={s("premiumPayingTerm")} placeholder="e.g. 15"/>
+      <L>Commencement date</L><input style={F} type="date" value={f.commencementDate} onChange={s("commencementDate")}/>
       <L>Maturity amount (₹)</L><input style={F} type="number" value={f.maturityAmount} onChange={s("maturityAmount")} placeholder="For LIC/life policies, if applicable"/>
       <L>Maturity date</L><input style={F} type="date" value={f.maturityDate} onChange={s("maturityDate")}/>
+      <L>Next payout date</L><input style={F} type="date" value={f.nextPayoutDate} onChange={s("nextPayoutDate")}/>
+      <L>Auto Pay status</L><select style={F} value={f.autoPayStatus} onChange={s("autoPayStatus")}><option>Not Enabled</option><option>Enabled</option><option>Unknown</option></select>
+      <L>Rider name</L><input style={F} value={f.riderName} onChange={s("riderName")} placeholder="e.g. Accidental Death & Disability Benefit Rider"/>
+      <L>Rider premium (₹)</L><input style={F} type="number" value={f.riderPremium} onChange={s("riderPremium")}/>
+      <L>Rider sum assured (₹)</L><input style={F} type="number" value={f.riderSumAssured} onChange={s("riderSumAssured")}/>
+      <L>Linked bank account number</L><input style={F} value={f.linkedBankAccountNumber} onChange={s("linkedBankAccountNumber")} placeholder="Optional"/>
+      <L>Bank name</L><input style={F} value={f.bankName} onChange={s("bankName")} placeholder="Optional"/>
+      <L>Branch</L><input style={F} value={f.bankBranch} onChange={s("bankBranch")} placeholder="Optional"/>
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,marginBottom:12,cursor:"pointer"}}><input type="checkbox" checked={f.makeRecurring} onChange={e=>setF({...f,makeRecurring:e.target.checked})} style={{width:16,height:16,accentColor:C.brand}}/>Create recurring premium reminder/payment</label>
       {f.makeRecurring&&<><L>Pay premium from</L><select style={F} value={f.payFromId} onChange={s("payFromId")}><option value="">Select bank/cash account</option>{bankOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><p style={{fontSize:12,color:C.muted,marginTop:-8}}>Life/endowment premiums are recorded as transfers to the policy account. Term/health premiums are recorded as Health → Insurance Premium expense.</p></>}
     </>}
@@ -1640,14 +1725,38 @@ function CreditCardModal({close,addAcc}){
 }
 
 function EditAccModal({close,account,editAcc,delAcc}){
-  const[f,setF]=useState({name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),policyType:account.policyType||account.type,premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",sumAssured:account.sumAssured||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(account.type);
+  const[f,setF]=useState({name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(account.type);
   return(<Sheet close={close} title="Edit Account">
     <L>Name</L><input style={F} value={f.name} onChange={s("name")}/>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[account.type]}/><L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
-    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>{isIns&&<><L>Policy type</L><select style={F} value={f.policyType} onChange={s("policyType")}>{INSURANCE_TYPES.map(t=><option key={t}>{t}</option>)}</select><L>Premium amount (₹)</L><input style={F} type="number" value={f.premiumAmount} onChange={s("premiumAmount")}/><L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option></select><L>Premium start / next date</L><input style={F} type="date" value={f.premiumStartDate} onChange={s("premiumStartDate")}/><L>Due day</L><input style={F} type="number" min="1" max="31" value={f.premiumDueDay} onChange={s("premiumDueDay")}/><L>Sum assured / cover (₹)</L><input style={F} type="number" value={f.sumAssured} onChange={s("sumAssured")}/><L>Maturity amount (₹)</L><input style={F} type="number" value={f.maturityAmount} onChange={s("maturityAmount")}/><L>Maturity date</L><input style={F} type="date" value={f.maturityDate} onChange={s("maturityDate")}/></>}
+    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>{isIns&&<>
+      <L>Policy type</L><select style={F} value={f.policyType} onChange={s("policyType")}>{INSURANCE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+      <L>Status</L><select style={F} value={f.status} onChange={s("status")}><option>Active</option><option>Paid-up</option><option>Matured</option><option>Closed</option></select>
+      <L>Plan type</L><input style={F} value={f.planType} onChange={s("planType")}/>
+      <L>Life insured</L><input style={F} value={f.lifeInsured} onChange={s("lifeInsured")}/>
+      <L>Nominee name</L><input style={F} value={f.nomineeName} onChange={s("nomineeName")}/>
+      <L>Premium amount (₹)</L><input style={F} type="number" value={f.premiumAmount} onChange={s("premiumAmount")}/>
+      <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option></select>
+      <L>Premium start / next date</L><input style={F} type="date" value={f.premiumStartDate} onChange={s("premiumStartDate")}/>
+      <L>Due day</L><input style={F} type="number" min="1" max="31" value={f.premiumDueDay} onChange={s("premiumDueDay")}/>
+      <L>Sum assured / cover (₹)</L><input style={F} type="number" value={f.sumAssured} onChange={s("sumAssured")}/>
+      <L>Policy term (years)</L><input style={F} type="number" value={f.policyTerm} onChange={s("policyTerm")}/>
+      <L>Premium paying term (years)</L><input style={F} type="number" value={f.premiumPayingTerm} onChange={s("premiumPayingTerm")}/>
+      <L>Commencement date</L><input style={F} type="date" value={f.commencementDate} onChange={s("commencementDate")}/>
+      <L>Maturity amount (₹)</L><input style={F} type="number" value={f.maturityAmount} onChange={s("maturityAmount")}/>
+      <L>Maturity date</L><input style={F} type="date" value={f.maturityDate} onChange={s("maturityDate")}/>
+      <L>Next payout date</L><input style={F} type="date" value={f.nextPayoutDate} onChange={s("nextPayoutDate")}/>
+      <L>Auto Pay status</L><select style={F} value={f.autoPayStatus} onChange={s("autoPayStatus")}><option>Not Enabled</option><option>Enabled</option><option>Unknown</option></select>
+      <L>Rider name</L><input style={F} value={f.riderName} onChange={s("riderName")}/>
+      <L>Rider premium (₹)</L><input style={F} type="number" value={f.riderPremium} onChange={s("riderPremium")}/>
+      <L>Rider sum assured (₹)</L><input style={F} type="number" value={f.riderSumAssured} onChange={s("riderSumAssured")}/>
+      <L>Linked bank account number</L><input style={F} value={f.linkedBankAccountNumber} onChange={s("linkedBankAccountNumber")}/>
+      <L>Bank name</L><input style={F} value={f.bankName} onChange={s("bankName")}/>
+      <L>Branch</L><input style={F} value={f.bankBranch} onChange={s("bankBranch")}/>
+    </>}
     <L>Account number</L><input style={F} value={f.accountNumber} onChange={s("accountNumber")}/>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")}/>
-    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,policyType:f.policyType,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,sumAssured:+f.sumAssured||0});close();}} style={SB}>Save</button>
+    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch});close();}} style={SB}>Save</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this account? Transactions linked to it will also be removed.")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete account</button>}
   </Sheet>);
 }
