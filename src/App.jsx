@@ -323,47 +323,19 @@ const loadPdf=()=>new Promise((res,rej)=>{
   s.onerror=()=>rej(new Error("PDF reader failed to load"));
   document.head.appendChild(s);
 });
-const OCRCDN="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-const loadOcr=()=>new Promise((res,rej)=>{
-  if(window.Tesseract)return res(window.Tesseract);
-  const s=document.createElement("script");s.src=OCRCDN;
-  s.onload=()=>window.Tesseract?res(window.Tesseract):rej(new Error("OCR reader failed to load"));
-  s.onerror=()=>rej(new Error("OCR reader failed to load"));
-  document.head.appendChild(s);
-});
-async function extractOcrLines(pdf,onProgress=()=>{}){
-  const T=await loadOcr();
-  const lines=[];
-  for(let p=1;p<=pdf.numPages;p++){
-    onProgress(`OCR page ${p} of ${pdf.numPages}…`);
-    const page=await pdf.getPage(p);
-    const viewport=page.getViewport({scale:2.2});
-    const canvas=document.createElement("canvas");
-    canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
-    const ctx=canvas.getContext("2d",{willReadFrequently:true});
-    await page.render({canvasContext:ctx,viewport}).promise;
-    const dataUrl=canvas.toDataURL("image/png");
-    const result=await T.recognize(dataUrl,"eng",{logger:m=>{
-      if(m.status==="recognizing text"&&typeof m.progress==="number")onProgress(`OCR page ${p}/${pdf.numPages}: ${Math.round(m.progress*100)}%`);
-    }});
-    String(result?.data?.text||"").split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean).forEach(x=>lines.push(x));
-  }
-  onProgress("OCR complete. Preparing review…");
-  return lines;
-}
-const looksLikeTxnStart=l=>DRE.test(l)||DRE2.test(l)||/^\s*\d+\s+\d{1,2}[\/\-.]/.test(l)||/^\s*\d{1,2}[\/\-.]/.test(l);
-function mergeOcrTransactionLines(lines=[]){
+const startsTxnLine=l=>/^\s*(?:\d+\s+)?\d{1,2}[\/\-.](?:\d{1,2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\/\-.]\d{2,4}\b/i.test(l)||/^\s*(?:\d+\s+)?\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\b/i.test(l);
+function mergeStatementTransactionLines(lines=[]){
   const merged=[];let cur="";
+  const skip=/^(page|statement|account statement|generated|date\b|narration|particulars|transaction date|value date|withdrawal|deposit|balance|closing balance|opening balance|chq|ref no|debit|credit)/i;
   for(const raw of lines){
-    const l=String(raw||"").replace(/[|]/g," ").replace(/₹/g," ").replace(/\s+/g," ").trim();
+    const l=String(raw||"").replace(/[|]/g," ").replace(/₹/g," ").replace(/\uFFFE/g," ").replace(/\s+/g," ").trim();
     if(!l)continue;
-    if(/^(page|statement|account statement|generated|date\b|narration|particulars|withdrawal|deposit|balance)/i.test(l))continue;
-    const txStart=looksLikeTxnStart(l);
-    if(txStart&&cur)merged.push(cur);
+    if(skip.test(l))continue;
+    const txStart=startsTxnLine(l);
+    if(txStart&&cur)merged.push(cur.trim());
     cur=txStart?l:(cur?`${cur} ${l}`:l);
-    if(cur.length>380){merged.push(cur);cur="";}
   }
-  if(cur)merged.push(cur);
+  if(cur)merged.push(cur.trim());
   return merged;
 }
 async function extractLines(pdf){
@@ -401,7 +373,7 @@ function matchRecurring(row,recurList){for(const r of recurList){const words=r.n
 function parseStatement(lines,accounts=[],recurList=[]){
   const all=lines.join(" ");
   const isKotak=/kotak mahindra|kkbk0007/i.test(all);
-  if(all.trim().length<200&&lines.length<10){const e=new Error("SCANNED");e.scanned=true;throw e;}
+  if(all.trim().length<80&&lines.length<3)return [];
   const out=[];let prevBal=null;
   const skip=l=>/^(date\b|sl\.?\s*no|transaction date|value date|particulars|narration|opening bal|closing bal|statement of|account no|page no)/i.test(l.trim());
   for(const line of lines){
@@ -456,11 +428,9 @@ const importDupKey=(accId,r)=>`${accId}|${r.date}|${(+r.amount).toFixed(2)}|${r.
 function rowConfidence(r){
   if(r.duplicate)return {label:"Duplicate",tone:C.muted,bg:C.bg,rank:3};
   if(r.balanceIssue)return {label:"Balance check",tone:C.expense,bg:C.softExpense,rank:2};
-  if(r.ocr&&(!r.desc||String(r.desc).length<8))return {label:"Low OCR confidence",tone:C.expense,bg:C.softExpense,rank:2};
   if(r.transferPair)return {label:"Possible own transfer",tone:C.xfer,bg:"#EEF3FF",rank:1};
   if(r.type==="transfer"&&!r.xferToId)return {label:"Review transfer",tone:C.xfer,bg:"#EEF3FF",rank:1};
   if(r.category==="Other"||!r.category)return {label:"Check category",tone:C.warn,bg:"#FFF8E8",rank:1};
-  if(r.ocr)return {label:"OCR row — review",tone:C.warn,bg:"#FFF8E8",rank:1};
   if(r.recurMatch)return {label:"Recurring match",tone:C.brand,bg:C.brandDim,rank:0};
   return {label:"Looks OK",tone:C.income,bg:C.softIncome,rank:0};
 }
@@ -472,7 +442,6 @@ function summarizeImportRows(rows=[]){
   const withBal=rows.filter(r=>typeof r.balance==="number"&&isFinite(r.balance));
   const balanceIssues=rows.filter(r=>r.balanceIssue).length;
   const transferPairs=rows.filter(r=>r.transferPair).length;
-  const lowOcr=rows.filter(r=>r.ocr&&rowConfidence(r).rank>0).length;
   return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length,balanceIssues,transferPairs,lowOcr};
 }
 const amountEffect=r=>r.type==="income"?(+r.amount||0):-(+r.amount||0);
@@ -560,6 +529,19 @@ function Main({data,persist,pin}){
   const[modal,setModal]=useState(null);
   const M=(type,extra={})=>setModal({type,...extra});
   const close=()=>setModal(null);
+  const goTab=id=>{
+    setTab(id);
+    try{
+      if(id==="categories")window.history.replaceState({mmTab:id},"");
+      else window.history.pushState({mmTab:id},"");
+    }catch{}
+  };
+  useEffect(()=>{
+    try{window.history.replaceState({mmTab:"categories"},"");}catch{}
+    const onPop=()=>{setModal(null);setTab("categories");};
+    window.addEventListener("popstate",onPop);
+    return()=>window.removeEventListener("popstate",onPop);
+  },[]);
 
   const addTxn  =t=>persist({...data,transactions:[...data.transactions,{...t,id:uid()}]});
   const addTxns =ts=>persist({...data,transactions:[...data.transactions,...ts.map(t=>({...t,id:uid()}))]});
@@ -635,7 +617,7 @@ function Main({data,persist,pin}){
       </div>
       <nav style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(240,237,247,.96)",backdropFilter:"blur(14px)",borderTop:`1px solid ${C.border}`,display:"grid",gridTemplateColumns:`repeat(${TABS.length},1fr)`,height:58,zIndex:20,padding:"4px 5px calc(4px + env(safe-area-inset-bottom))"}}>
         {TABS.map(({id,Icon,label})=>(
-          <button key={id} onClick={()=>setTab(id)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:tab===id?"#E6DFFF":"transparent",border:"none",borderRadius:17,cursor:"pointer",color:tab===id?C.brand:C.ink,fontSize:9,fontWeight:tab===id?900:650,overflow:"hidden"}}>
+          <button key={id} onClick={()=>goTab(id)} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:tab===id?"#E6DFFF":"transparent",border:"none",borderRadius:17,cursor:"pointer",color:tab===id?C.brand:C.ink,fontSize:9,fontWeight:tab===id?900:650,overflow:"hidden"}}>
             <Icon size={18} strokeWidth={tab===id?2.8:2.2}/><span style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
           </button>
         ))}
@@ -1741,7 +1723,6 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
   const[accId,setAId]=useState(data.accounts.filter(a=>a.type!=="Loan")[0]?.id||"");
   const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);const[profile,setProfile]=useState(null);const[summary,setSummary]=useState(null);
   const[importReport,setImportReport]=useState(null);
-  const[ocrProg,setOcrProg]=useState("");
   const[skipped,setSkipped]=useState([]);const[showSkipped,setShowSkipped]=useState(false);
   const[carryoverDate,setCOD]=useState("");const[carryoverAmt,setCOA]=useState("");const[showCarryover,setSC]=useState(false);
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
@@ -1750,26 +1731,20 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       try{pdf=await lib.getDocument({data:buf,password:pwd||undefined}).promise;}
       catch(e){if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setNP(true);setErr(pwd?"Wrong password — try again.":"PDF is password-protected. I tried the filename password if available. Please check or edit the password.");setStep("pick");return;}throw e;}
       const pagesTotal=pdf.numPages||0;let readMode="PDF text";
-      let lines=await extractLines(pdf);let rawLineCount=lines.length;let ocrLineCount=0;let blob=lines.join(" ");
+      const rawLines=await extractLines(pdf);let rawLineCount=rawLines.length;let blob=rawLines.join(" ");
+      let lines=mergeStatementTransactionLines(rawLines);
+      if(!lines.length||lines.length<Math.max(3,Math.floor(rawLines.length*0.12)))lines=rawLines;
       let prof=detectStatementProfile(lines,file.name);setProfile(prof);
       let hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
-      let parsed=[];let needsOcr=false;let textParseError=null;
+      let parsed=[];let textParseError=null;readMode="PDF text + date-merge";
       try{parsed=parseStatement(lines,data.accounts,data.recurring);}
-      catch(e){textParseError=e;needsOcr=!!e.scanned;}
-      const hdfcLikely=prof.bank==="HDFC"||/hdfc/i.test(file.name);
-      if(hdfcLikely&&parsed.length<3)needsOcr=true;
-      if(!parsed.length&&blob.trim().length<600)needsOcr=true;
-      if(needsOcr){
-        setStep("ocr");setOcrProg(hdfcLikely?"HDFC scan detected. Starting OCR…":"Scanned PDF detected. Starting OCR…");
-        const ocrLines=await extractOcrLines(pdf,setOcrProg);ocrLineCount=ocrLines.length;readMode="OCR";
-        const merged=mergeOcrTransactionLines(ocrLines);
-        lines=merged.length?merged:ocrLines;blob=lines.join(" ");
-        prof=detectStatementProfile(lines,file.name);setProfile({...prof,mode:"OCR"});
-        hit=data.accounts.find(a=>(prof.accountLast4&&a.hint&&a.hint.endsWith(prof.accountLast4))||(a.hint&&a.hint.length>=4&&new RegExp(`${a.hint}\b`).test(blob)));if(hit)setAId(hit.id);
-        try{parsed=parseStatement(lines,data.accounts,data.recurring).map(r=>({...r,ocr:true}));}
-        catch(e){parsed=[];}
-      }else if(textParseError){throw textParseError;}
-      if(!parsed.length){setErr("Could not confidently read transactions. OCR may need a clearer scan. Try a sharper statement copy, or split a long PDF and import in parts.");setStep("pick");return;}
+      catch(e){textParseError=e;}
+      if(!parsed.length&&lines!==rawLines){
+        try{parsed=parseStatement(rawLines,data.accounts,data.recurring);readMode="PDF text";}
+        catch(e){textParseError=e;}
+      }
+      setProfile({...prof,mode:readMode});
+      if(!parsed.length){setErr("Could not confidently read transactions from embedded PDF text. This statement may need stronger bank-specific rules or a cleaner unlocked PDF. Try splitting the statement and importing again.");setStep("pick");return;}
       const targetAcc=hit?.id||accId;
       const serialStats=extractStatementSerials(lines);
       const audit=balanceAuditRows(parsed);
@@ -1779,7 +1754,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       const skippedRows=skippedLineCandidates(lines,withXfer);
       const fp=statementFingerprint(prof,sum,file.name);
       const duplicateStatement=getStatementFps().includes(fp);
-      setImportReport({pagesRead:pagesTotal,pagesTotal,rawLineCount,ocrLineCount,readMode,serialStats,balanceChecked:audit.checked,balanceIssues:audit.issues,balanceMode:audit.mode,skippedRows,fingerprint:fp,duplicateStatement});
+      setImportReport({pagesRead:pagesTotal,pagesTotal,rawLineCount,mergedLineCount:lines.length,readMode,serialStats,balanceChecked:audit.checked,balanceIssues:audit.issues,balanceMode:audit.mode,skippedRows,fingerprint:fp,duplicateStatement});
       setRows(withXfer);setSummary(sum);
       const hasExisting=data.transactions.some(t=>t.accountId===targetAcc);
       if(!hasExisting&&withXfer.length>0){const sorted=[...withXfer].sort((a,b)=>a.date.localeCompare(b.date));setCOD(prevDay(sorted[0].date));setSC(true);setStep("carryover");}
@@ -1809,7 +1784,6 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       <button onClick={parse} disabled={!file} style={{...SB,background:file?C.brand:"#ccc",cursor:file?"pointer":"default"}}>Read Statement</button>
     </>}
     {step==="parsing"&&<p style={{textAlign:"center",color:C.muted,padding:"32px 0"}}>Reading your statement…</p>}
-    {step==="ocr"&&<div style={{textAlign:"center",padding:"28px 0"}}><div style={{fontSize:40,marginBottom:10}}>🔎</div><div style={{fontSize:15,fontWeight:800,color:C.ink}}>OCR reading scanned statement</div><p style={{fontSize:12,color:C.muted,lineHeight:1.5,margin:"8px 12px 0"}}>{ocrProg||"Preparing OCR…"}</p><p style={{fontSize:11,color:C.muted,lineHeight:1.5,margin:"14px 12px 0"}}>This may take a few minutes for HDFC scanned PDFs. Review all rows before importing.</p></div>}
     {step==="carryover"&&<>
       <div style={{background:"#EEF3FF",borderRadius:14,padding:16,marginBottom:16,border:"1px solid #C7D7FF"}}><div style={{fontSize:13,fontWeight:700,color:C.xfer,marginBottom:6}}>📌 First statement for this account</div><div style={{fontSize:13,color:C.ink}}>Statement starts from {rows.length>0?[...rows].sort((a,b)=>a.date.localeCompare(b.date))[0].date:""}. Enter your balance on <b>{carryoverDate}</b> to set the correct opening balance.</div></div>
       <L>Account balance on {carryoverDate} (₹)</L>
@@ -1839,7 +1813,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
         {importReport?.serialStats?.max>0&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Statement row numbers detected: {importReport.serialStats.found} / up to {importReport.serialStats.max}{importReport.serialStats.missing?.length?` · Missing serials: ${importReport.serialStats.missing.slice(0,8).join(", ")}${importReport.serialStats.missing.length>8?"…":""}`:""}</div>}
         {importReport?.duplicateStatement&&<div style={{fontSize:11,color:C.expense,marginTop:6,fontWeight:900}}>⚠️ This looks like a statement already imported earlier. Import only after checking duplicates.</div>}
         {profile?.mode&&<div style={{fontSize:11,color:C.warn,marginTop:6}}>Read mode: {profile.mode} — review carefully before import.</div>}
-        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check “Possible own transfer”, “Balance check” and OCR rows before import. Duplicate/problem rows are unticked automatically.</div>
+        <div style={{fontSize:11,color:C.muted,marginTop:6}}>Check “Possible own transfer” and “Balance check” before import. Duplicate/problem rows are unticked automatically.</div>
       </div>
       <L>Account</L><select style={F} value={accId} onChange={e=>setAId(e.target.value)}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
       <div style={{display:"grid",gap:8,maxHeight:"44vh",overflowY:"auto"}}>
