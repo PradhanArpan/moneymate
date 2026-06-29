@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.4 Goals + Lended
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.5 Accounts Insurance Finance
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -82,6 +82,7 @@ const CAT_EMOJI = {
 };
 const isInsuranceAccount=a=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(a?.type);
 const policyFrequencyLabel=f=>f==="halfyearly"?"Half-yearly":f==="yearly"?"Yearly":f==="monthly"?"Monthly":(f||"—");
+const policyFrequencyShort=f=>f==="halfyearly"?"Hly":f==="yearly"?"Yly":f==="monthly"?"Mly":(f||"—");
 const mainCategory=n=>CATEGORY_ALIASES[n]||n;
 const subcatsFor=(cat,type="expense")=>SUBCATEGORY_MAP[mainCategory(cat)]||[];
 const firstSub=(cat,type="expense")=>subcatsFor(cat,type)[0]||"";
@@ -230,6 +231,15 @@ function fmtShortDate(date){
   const dt=new Date(date);
   if(Number.isNaN(dt.getTime()))return String(date);
   return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+}
+function fmtDDMMYYYY(date){
+  if(!date)return "—";
+  const s=String(date);
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){const[y,m,d]=s.split("-");return `${d}-${m}-${y}`;}
+  const dt=new Date(date);
+  if(Number.isNaN(dt.getTime()))return s;
+  const d=String(dt.getDate()).padStart(2,"0"),m=String(dt.getMonth()+1).padStart(2,"0"),y=dt.getFullYear();
+  return `${d}-${m}-${y}`;
 }
 const periodLabel=p=>{
   if(!p||p.kind==="month")return monthLabel(p?.month||curMo());
@@ -414,7 +424,7 @@ const goalTypeLabel=(g,accounts=[])=>{
 };
 const assetAccountValue=(a,v)=>{
   if(!a)return 0;
-  if(["Loan","Credit Card","Term Insurance","Health Insurance","Goal"].includes(a.type))return 0;
+  if(["Loan","Credit Card","Goal"].includes(a.type)||isInsuranceAccount(a))return 0;
   if(a.type==="Lended"&&a.lendDirection==="from")return 0;
   return Math.max(0,+v||0);
 };
@@ -423,6 +433,10 @@ const debtAccountValue=(a,v)=>{
   if(a.type==="Loan"||a.type==="Credit Card")return Math.abs(+v||0);
   if(a.type==="Lended"&&a.lendDirection==="from")return Math.abs(+v||0);
   return 0;
+};
+const netWorthAccountValue=(a,v)=>{
+  if(!a||a.type==="Goal"||isInsuranceAccount(a))return 0;
+  return +v||0;
 };
 
 /* ── AES-256-GCM ─────────────────────────────────────────────────── */
@@ -753,7 +767,7 @@ function Main({data,persist,pin}){
     data.transactions.forEach(t=>{const amt=+t.amount||0;if(t.type==="income")b[t.accountId]=(b[t.accountId]||0)+amt;else if(t.type==="expense")b[t.accountId]=(b[t.accountId]||0)-amt;else if(t.type==="transfer"){b[t.accountId]=(b[t.accountId]||0)-amt;if(t.toAccountId)b[t.toAccountId]=(b[t.toAccountId]||0)+amt;}});
     return b;
   },[data]);
-  const netWorth=data.accounts.reduce((s,a)=>a.type==="Goal"?s:s+(balances[a.id]||0),0);
+  const netWorth=data.accounts.reduce((s,a)=>s+netWorthAccountValue(a,balances[a.id]||0),0);
   const ccDueAlerts=useMemo(()=>{const todayNum=new Date().getDate();return data.accounts.filter(a=>a.type==="Credit Card"&&a.dueDay).map(a=>{const due=a.dueDay,diff=due>=todayNum?due-todayNum:30-todayNum+due;return diff<=7?{...a,daysLeft:diff}:null;}).filter(Boolean);},[data]);
   const backupReminder=daysSinceBackup()>30;
 
@@ -933,11 +947,13 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   </div>);
 }
 
-function txnAccountOptions(data){return [{id:"all",name:"All Accounts"},...(data.accounts||[]).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
-function txnAccountLabel(data,id){if(!id||id==="all")return "All Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
+function savingsTxnAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type));}
+function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id));}
+function txnAccountOptions(data){return [{id:"all",name:"All Savings Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Savings Account"}))];}
+function txnAccountLabel(data,id){if(!id||id==="all")return "All Savings Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
 function nextTxnAccountId(data,current){const opts=txnAccountOptions(data);const i=Math.max(0,opts.findIndex(o=>o.id===current));return opts[(i+1)%opts.length]?.id||"all";}
-function txnMatchesAccount(t,id){return !id||id==="all"||t.accountId===id||t.toAccountId===id;}
-function txnBalanceEffect(t,id){const amt=+t.amount||0;if(!id||id==="all"){if(t.type==="income")return amt;if(t.type==="expense")return -amt;return 0;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
+function txnMatchesAccount(t,id,data){if(!id||id==="all"){const ids=savingsTxnIds(data);return ids.has(t.accountId)||ids.has(t.toAccountId);}return t.accountId===id||t.toAccountId===id;}
+function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){const ids=savingsTxnIds(data);let v=0;if(t.type==="income"&&ids.has(t.accountId))v+=amt;if(t.type==="expense"&&ids.has(t.accountId))v-=amt;if(t.type==="transfer"){if(ids.has(t.accountId))v-=amt;if(ids.has(t.toAccountId))v+=amt;}return v;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TRANSACTIONS TAB
@@ -947,10 +963,10 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
   const[search,setSearch]=useState("");
   const[accountFilter,setAccountFilter]=useState("all");
   const cycleAccount=()=>setAccountFilter(id=>nextTxnAccountId(data,id));
-  const periodList=periodTxns(data.transactions,period).filter(t=>txnMatchesAccount(t,accountFilter)).sort((a,b)=>b.date.localeCompare(a.date));
+  const periodList=periodTxns(data.transactions,period).filter(t=>txnMatchesAccount(t,accountFilter,data)).sort((a,b)=>b.date.localeCompare(a.date));
   const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
-  const endingBal=accountFilter==="all"?netWorth:(balances?.[accountFilter]||0);
-  const startBal=endingBal-periodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter),0);
+  const endingBal=accountFilter==="all"?savingsTxnAccounts(data).reduce((s,a)=>s+(balances?.[a.id]||0),0):(balances?.[accountFilter]||0);
+  const startBal=endingBal-periodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter,data),0);
   return(<div style={Screen}>
     <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
     <div style={{padding:"16px 18px 8px"}}>
@@ -961,7 +977,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
-      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter);const isPositive=eff>0;const isNegative=eff<0;return <div key={t.id} style={TxnMiniRow}>
+      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter,data);const isPositive=eff>0;const isNegative=eff<0;return <div key={t.id} style={TxnMiniRow}>
         <MiniCatIcon name={t.category} index={0}/>
         <div style={{minWidth:0,overflow:"hidden"}}>
           <div style={{fontSize:10.8,fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.05}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div>
@@ -988,13 +1004,15 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const accountRows=[...data.accounts,...goalRows];
   const assetValue=data.accounts.reduce((s,a)=>s+assetAccountValue(a,balances[a.id]||0),0);
   const debtValue=data.accounts.reduce((s,a)=>s+debtAccountValue(a,balances[a.id]||0),0);
+  const financeRows=data.accounts.map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)})).filter(r=>Math.abs(r.value)>0).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
   const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
   const lastTxnFor=id=>[...data.transactions].filter(t=>t.accountId===id||t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const lastPaidForCC=id=>[...data.transactions].filter(t=>t.type==="transfer"&&t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const accountSub=a=>{
     if(a._goal){
       const pct=progressPct(a.value,a.target);
-      return `${goalTypeLabel(a._goal||a)} · ${Math.round(pct)}% · linked value ${inr(a.value||0)}`;
+      const td=a.targetDate?fmtDDMMYYYY(a.targetDate):"Target date —";
+      return `${goalTypeLabel(a._goal||a)} · ${Math.round(pct)}% · ${td}`;
     }
     if(a.type==="Loan"){
       const pct=loanPaidPct(a);
@@ -1011,10 +1029,8 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
       return a.lendDirection==="from"?`Borrowed from ${who}`:`Lent to ${who}`;
     }
     if(isInsuranceAccount(a)){
-      const prem=a.premiumAmount?`Premium ${inr(a.premiumAmount)} ${policyFrequencyLabel(a.premiumFrequency)}`:"Premium not set";
-      const next=a.premiumStartDate?`Next ${fmtShortDate(a.premiumStartDate)}`:"Next date not set";
-      const mat=a.maturityAmount?`Maturity ${inr(a.maturityAmount)}`:(a.sumAssured?`Cover ${inr(a.sumAssured)}`:"Documentation");
-      return `${a.policyType||a.type} · ${prem} · ${next} · ${mat}`;
+      const prem=a.premiumAmount?`Premium ${inr(a.premiumAmount)} ${policyFrequencyShort(a.premiumFrequency)}`:"Premium not set";
+      return `${a.policyType||a.type} · ${prem}`;
     }
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
@@ -1029,7 +1045,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
     </div>
     <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",padding:"12px 12px 86px",maxWidth:"100vw"}}>
       {section==="finance"?(
-        <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth}/>
+        <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth} rows={financeRows}/>
       ):(
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
@@ -1049,10 +1065,14 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
 }
 
 function AccountSection({title,rows,render}){
+  const[open,setOpen]=useState(true);
   if(!rows.length)return null;
   return <div style={{display:"grid",gap:8,minWidth:0,maxWidth:"100%",overflow:"hidden"}}>
-    <div style={{fontSize:13,fontWeight:900,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",padding:"2px 2px"}}>{title}</div>
-    {rows.map(render)}
+    <button onClick={()=>setOpen(!open)} style={{border:"none",background:"transparent",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"2px 2px",cursor:"pointer",textAlign:"left"}}>
+      <span style={{fontSize:13,fontWeight:900,color:C.muted,textTransform:"uppercase",letterSpacing:".08em"}}>{title} <span style={{letterSpacing:0,color:C.muted}}>({rows.length})</span></span>
+      <span style={{fontSize:14,fontWeight:900,color:C.brand}}>{open?"▾":"▸"}</span>
+    </button>
+    {open&&rows.map(render)}
   </div>;
 }
 function regularAccountCanOpen(a){return !a._goal&&["Bank","Cash","UPI / Wallet","Savings"].includes(a.type);}
@@ -1070,12 +1090,13 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
     <div style={{flex:1,textAlign:"left",minWidth:0,overflow:"hidden"}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"baseline",minWidth:0}}>
         <div style={{fontSize:14,fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1}}>{a.name}</div>
-        <div style={{fontSize:13,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0,maxWidth:"42%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{inr(accountValue(a))}</div>
+        {!isInsuranceAccount(a)&&<div style={{fontSize:13,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0,maxWidth:"42%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{inr(accountValue(a))}</div>}
       </div>
       <div style={{fontSize:11.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
-      {lastTxn&&!a._goal&&!(a.type==="Loan")&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
+      {lastTxn&&!a._goal&&!(a.type==="Loan")&&!isInsuranceAccount(a)&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
       {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button><button onClick={e=>{e.stopPropagation();setModal("paycc",{cc:a});}} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.income,fontWeight:900}}>Pay</button></div>}
+      {isInsuranceAccount(a)&&<div style={{fontSize:10.8,color:C.muted,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:800}}>Sum Assured {a.sumAssured?inr(a.sumAssured):"—"} · Maturity {a.maturityDate?fmtDDMMYYYY(a.maturityDate):"—"}</div>}
       {isInsuranceAccount(a)&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit policy</button><span style={{fontSize:11.5,color:C.muted,fontWeight:800}}>Tap card for details</span></div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
       {a.type==="Credit Card"&&<CreditCardFuelMeter card={a} value={accountValue(a)}/>} 
@@ -1106,9 +1127,9 @@ function AccountTransactionsView({account,data,balances,netWorth,accountValue,se
     <FloatingAdd onClick={()=>setModal("txn",{accountId:account.id})}/>
   </div>;
 }
-function FinanceOnlyView({assets,debts,netWorth}){
+function FinanceOnlyView({assets,debts,netWorth,rows=[]}){
   return <div style={{paddingTop:2}}>
-    <FinanceSummary assets={assets} debts={debts} netWorth={netWorth}/>
+    <FinanceSummary assets={assets} debts={debts} netWorth={netWorth} rows={rows}/>
   </div>;
 }
 function progressPct(value,target){const t=+target||0;if(t<=0)return 0;return Math.max(0,Math.min(100,((+value||0)/t)*100));}
@@ -1235,11 +1256,17 @@ function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",t
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
   </div>
 </div>}
-function FinanceSummary({assets,debts,netWorth}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
+function FinanceSummary({assets,debts,netWorth,rows=[]}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
     <div style={{padding:"12px",textAlign:"center",borderRight:`1px solid ${C.border}`}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Assets</div><div style={{fontSize:18,fontWeight:800,color:C.income,marginTop:5}}>{inr(assets)}</div></div>
     <div style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Debts</div><div style={{fontSize:18,fontWeight:800,color:C.expense,marginTop:5}}>{inr(debts)}</div></div>
   </div>
+  {rows.length>0&&<div style={{padding:"10px 12px",display:"grid",gap:7,borderBottom:`1px solid ${C.border}`,background:"#fff"}}>
+    {rows.slice(0,12).map(r=><div key={r.account.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,fontSize:12}}>
+      <span style={{fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.account.name}</span>
+      <span style={{fontWeight:950,color:r.value>=0?C.income:C.expense,whiteSpace:"nowrap"}}>{inr(r.value)}</span>
+    </div>)}
+  </div>}
   <div style={{padding:"13px 12px",textAlign:"center",background:C.bg}}><div style={{fontSize:12,fontWeight:700,color:C.muted}}>Overall Amount</div><div style={{fontSize:22,fontWeight:900,color:netWorth>=0?C.income:C.expense,marginTop:4}}>{inr(netWorth)}</div></div>
 </div>}
 function catLabel(n){return mainCategory(n)||n;}
