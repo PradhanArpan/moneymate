@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.6 Expense Account Filter
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.7 Recurring Paid Button
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -455,7 +455,7 @@ const HARDCODED_LIC_ACCOUNTS=[
   {id:"hdfclife-click2wealth-21539805",name:"HDFC Life Click 2 Wealth",type:"Life Insurance",logoKey:"hdfclifeplus",opening:0,accountNumber:"21539805",hint:"9805",status:"Active",policyType:"Life Insurance",planType:"Click 2 Wealth - Invest Plus Option",lifeInsured:"Arpan Pradhan",nomineeName:"Sudatta Mohanty",sumAssured:600000,policyTerm:15,premiumPayingTerm:5,commencementDate:"2019-06-04",issueDate:"2019-06-04",maturityDate:"2034-06-04",nextPayoutDate:"",premiumAmount:5000,annualizedPremium:60000,premiumFrequency:"monthly",premiumDueDay:4,premiumStartDate:"2019-07-04",premiumEndDate:"2024-05-04",finalPremiumDueDate:"2024-05-04",autoPayStatus:"Unknown",maturityAmount:0,riderName:"ULIP funds: Diversified Equity 40%, Equity Advantage 40%, Opportunities 20%",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 04/06/2019; premium paying term 5 years; final premium due 04/05/2024; maturity 04/06/2034."},
 ];
 const HARDCODED_HEALTH_INSURANCE_ACCOUNTS=[
-  {id:"health-hdfcergo-2856205316603901000",name:"HDFC ERGO Optima Secure",type:"Health Insurance",logoKey:"hdfcergo",opening:0,accountNumber:"2856205316603901000",hint:"1000",status:"Active",policyType:"Health Insurance",planType:"my:Optima Secure",lifeInsured:"Arpan Pradhan; Joice Das",nomineeName:"Sudatta Mohanty",sumAssured:2500000,policyTerm:3,premiumPayingTerm:0,commencementDate:"2026-03-19",maturityDate:"2029-03-18",nextPayoutDate:"",premiumAmount:68361,premiumFrequency:"once",premiumDueDay:18,premiumStartDate:"2029-03-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Family Floater; Plus Benefit; Secure Benefit; Automatic Restore; Optima Wellbeing",riderPremium:0,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 20/02/2026; premium paid 20/02/2026; policy period 19/03/2026 to 18/03/2029",policyCategory:"Family Floater",policyUIN:"HDFHLIP25041V062425",premiumReceiptNo:"3822602127753",coverageNotes:"Base health cover ₹25,00,000; Plus Benefit ₹5,00,000; Emergency Air Ambulance up to ₹5,00,000; Preventive Health Check-up floater ₹10,000; insured persons: Arpan Pradhan and Joice Das."},
+  {id:"health-hdfcergo-2856205316603901000",name:"HDFC ERGO Optima Secure",type:"Health Insurance",logoKey:"hdfcergo",opening:0,accountNumber:"2856205316603901000",hint:"1000",status:"Active",policyType:"Health Insurance",planType:"my:Optima Secure",lifeInsured:"Arpan Pradhan; Joice Das",nomineeName:"Sudatta Mohanty",sumAssured:2500000,policyTerm:3,premiumPayingTerm:0,commencementDate:"2026-03-19",maturityDate:"2029-03-18",nextPayoutDate:"",premiumAmount:68361,premiumFrequency:"once",premiumDueDay:20,premiumStartDate:"2029-02-20",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Family Floater; Plus Benefit; Secure Benefit; Automatic Restore; Optima Wellbeing",riderPremium:0,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 20/02/2026; premium paid 20/02/2026; policy period 19/03/2026 to 18/03/2029; next renewal reminder set to 20/02/2029",policyCategory:"Family Floater",policyUIN:"HDFHLIP25041V062425",premiumReceiptNo:"3822602127753",coverageNotes:"Base health cover ₹25,00,000; Plus Benefit ₹5,00,000; Emergency Air Ambulance up to ₹5,00,000; Preventive Health Check-up floater ₹10,000; insured persons: Arpan Pradhan and Joice Das."},
   {id:"health-star-11251373949700",name:"Star Health Women Care",type:"Health Insurance",logoKey:"starhealth",opening:0,accountNumber:"11251373949700",hint:"9700",status:"Active",policyType:"Health Insurance",planType:"Star Women Care Insurance Policy",lifeInsured:"Joice Das",nomineeName:"Arpan Pradhan",sumAssured:5000000,policyTerm:2,premiumPayingTerm:0,commencementDate:"2024-11-26",maturityDate:"2026-11-25",nextPayoutDate:"",premiumAmount:39713,premiumFrequency:"once",premiumDueDay:25,premiumStartDate:"2026-11-25",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Individual health cover; Star Women Care Insurance - 2021",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 26/11/2024; premium paid 26/11/2024; policy period 26/11/2024 to 25/11/2026",policyCategory:"Individual",policyUIN:"SHAHLIP23132V022223",premiumReceiptNo:"700016/RV/2025/0176774927/1",coverageNotes:"Sum insured ₹50,00,000; insured person: Joice Das; nominee: Arpan Pradhan; no PED declared; policy type: Star Women Care Insurance - 2021."},
 ];
 const mergeAccountDefaults=(account,defaults)=>{
@@ -1092,11 +1092,33 @@ function Main({data,persist,pin}){
       persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])],lastDone:"",lastDoneDate:""}:r).concat(one)});
     }
   };
+  const payRecurringOccurrence=(rec,due,changes={})=>{
+    const r={...rec,...changes};
+    const amount=+r.amount||0;
+    if(!amount||amount<=0){alert("Enter a valid amount before marking this as paid.");return false;}
+    if(!r.accountId){alert("Choose the From / Account before marking this as paid.");return false;}
+    if(r.type==="transfer"&&!r.toAccountId){alert("Choose the To account before marking this as paid.");return false;}
+    const txn={
+      id:uid(),
+      type:r.type,
+      amount,
+      category:r.type==="transfer"?"Transfer":mainCategory(r.category),
+      subcategory:r.type==="transfer"?"":(r.subcategory||""),
+      accountId:r.accountId,
+      toAccountId:r.type==="transfer"?r.toAccountId:undefined,
+      date:due,
+      note:r.name||"Recurring payment",
+      source:"manual-recurring-paid",
+      paidRecurringId:r.id,
+      paidRecurringDate:due
+    };
+    if(recurringTxnExists(data.transactions,rec,due)){alert("A matching payment is already recorded for this date.");return false;}
+    persist({...data,transactions:[...data.transactions,txn]});
+    return true;
+  };
   const markPaid=rec=>{
     const due=nextRecurringDueDate(rec)||today();
-    if(!rec.accountId){alert("Please edit this recurring item or record the payment manually and choose the paying bank account. The premium reminder will remain visible until then.");return;}
-    const txn={id:uid(),type:rec.type,amount:+rec.amount||0,category:rec.type==="transfer"?"Transfer":rec.category,subcategory:rec.type==="transfer"?"":(rec.subcategory||""),accountId:rec.accountId,toAccountId:rec.type==="transfer"?rec.toAccountId:undefined,date:due,note:rec.name};
-    persist({...data,transactions:[...data.transactions,txn],recurring:data.recurring.map(r=>r.id===rec.id?{...r,lastDone:due,lastDoneDate:due}:r)});
+    payRecurringOccurrence(rec,due);
   };
   const importBatch=txns=>persist({...data,transactions:[...data.transactions,...txns]});
   const restoreData=d=>{persist(d);};
@@ -1133,7 +1155,7 @@ function Main({data,persist,pin}){
   ];
   const shared={data,balances,netWorth,expCats,incCats,bankAccounts,cashAccount,ccDueAlerts,backupReminder,
     addTxn,addTxns,delTxn,editTxn,addAcc,delAcc,editAcc,editLoan,editCC,payLoan,
-    addGoal,delGoal,editGoal,setBudget,delBudget,addCat,addRec,delRec,skipRecOccurrence,deleteRecFuture,editRecOccurrence,markPaid,
+    addGoal,delGoal,editGoal,setBudget,delBudget,addCat,addRec,delRec,skipRecOccurrence,deleteRecFuture,editRecOccurrence,payRecurringOccurrence,markPaid,
     importBatch,restoreData,exportCSV,setModal:M};
 
   return(
@@ -1155,7 +1177,7 @@ function Main({data,persist,pin}){
       </nav>
       {modal?.type==="txn"       &&<TxnModal       close={close} data={data} addTxn={addTxn} addTxns={addTxns} addRec={addRec} expCats={expCats} incCats={incCats} addCat={addCat} preset={modal}/>} 
       {modal?.type==="edittxn"   &&<EditTxnModal   close={close} txn={modal.txn} data={data} editTxn={editTxn} delTxn={delTxn} addRec={addRec} expCats={expCats} incCats={incCats}/>} 
-      {modal?.type==="editrec"   &&<EditRecurringModal close={close} rec={modal.rec} due={modal.due} data={data} expCats={expCats} incCats={incCats} skipRecOccurrence={skipRecOccurrence} deleteRecFuture={deleteRecFuture} editRecOccurrence={editRecOccurrence}/>} 
+      {modal?.type==="editrec"   &&<EditRecurringModal close={close} rec={modal.rec} due={modal.due} data={data} expCats={expCats} incCats={incCats} skipRecOccurrence={skipRecOccurrence} deleteRecFuture={deleteRecFuture} editRecOccurrence={editRecOccurrence} payRecurringOccurrence={payRecurringOccurrence}/>} 
       {modal?.type==="quickadd"  &&<QuickAddModal   close={close} data={data} addTxn={addTxn} cat={modal.cat} kind={modal.kind||"expense"} expCats={expCats} incCats={incCats}/>} 
       {modal?.type==="quickcash" &&<QuickCashModal  close={close} data={data} addTxn={addTxn} expCats={expCats}/>} 
       {modal?.type==="acctpicker"&&<AccountPickerModal close={close} setModal={M}/>} 
@@ -1318,7 +1340,7 @@ function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TRANSACTIONS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
+function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,payRecurringOccurrence}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const[search,setSearch]=useState("");
   const[accountFilter,setAccountFilter]=useState("all");
@@ -1347,6 +1369,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
           <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · scheduled only · not paid":""}</div>
         </div>
         <div style={{fontSize:10.8,fontWeight:950,color:t._planned?C.muted:(isPositive?C.income:isNegative?C.expense:C.xfer),whiteSpace:"nowrap",textAlign:"right"}}>{isPositive?"+":isNegative?"−":""}{inr(t.amount)}</div>
+        {t._planned&&rec?<button onClick={()=>rec.accountId&&payRecurringOccurrence?payRecurringOccurrence(rec,t.date):setModal("editrec",{rec,due:t.date})} style={TxnPaidSmall}>Paid</button>:<span/>}
         <button onClick={()=>t._planned&&rec?setModal("editrec",{rec,due:t.date}):setModal("edittxn",{txn:t})} style={TxnEditSmall}>Edit</button>
       </div>})}</div>}
       <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>setModal("import")} style={SoftBtn}>Import PDF</button>{data.transactions.length>0&&<button onClick={exportCSV} style={SoftBtn}>Export CSV</button>}</div>
@@ -1769,8 +1792,9 @@ function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,
 const EmptyState=({emoji,text})=><div style={{textAlign:"center",padding:"26px 10px",color:C.muted}}><div style={{fontSize:42,marginBottom:8}}>{emoji}</div><div style={{fontSize:13}}>{text}</div></div>;
 const ListLine={display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"};
 const TransactionRow={background:C.card,borderRadius:16,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 2px 8px rgba(32,33,44,.04)",border:`1px solid ${C.border}`};
-const TxnMiniRow={background:C.card,borderRadius:12,padding:"6px 6px",display:"grid",gridTemplateColumns:"25px minmax(0,1fr) max-content 32px",alignItems:"center",gap:5,boxShadow:"0 1px 5px rgba(32,33,44,.035)",border:`1px solid ${C.border}`};
+const TxnMiniRow={background:C.card,borderRadius:12,padding:"6px 6px",display:"grid",gridTemplateColumns:"25px minmax(0,1fr) max-content max-content 32px",alignItems:"center",gap:5,boxShadow:"0 1px 5px rgba(32,33,44,.035)",border:`1px solid ${C.border}`};
 const TxnEditSmall={border:"none",background:"transparent",color:C.brand,fontSize:10.5,fontWeight:900,cursor:"pointer",padding:"4px 0",textAlign:"right"};
+const TxnPaidSmall={border:"none",background:C.softIncome,color:C.income,fontSize:10.5,fontWeight:950,cursor:"pointer",padding:"4px 6px",borderRadius:9,textAlign:"center"};
 const PlainSmall={border:"none",background:"transparent",color:C.muted,fontSize:13,fontWeight:800,cursor:"pointer"};
 const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:"11px 10px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer"};
 const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
@@ -2018,7 +2042,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
   const accountOpts=entryAccountOptions(data,tp);
   const[accId,setAccId]=useState(ensureEntryAccount(data,tp,preset?.accountId||""));
   const[toId,setToId]=useState(data.accounts[1]?.id||data.accounts[0]?.id||"");
-  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
   const[date,setDate]=useState(today());
   const[note,setNote]=useState("");
   const[rep,setRep]=useState(false);
@@ -2080,7 +2104,7 @@ function EditTxnModal({close,txn,data,editTxn,delTxn,addRec,expCats,incCats}){
   const[tp,setTp]=useState(txn.type);const[amt,setAmt]=useState(String(txn.amount));const[cat,setCat]=useState(mainCategory(txn.category));const[subcat,setSubcat]=useState(txn.subcategory||firstSub(mainCategory(txn.category),txn.type));
   const accountOpts=entryAccountOptions(data,tp);
   const[accId,setAccId]=useState(ensureEntryAccount(data,tp,txn.accountId));const[toId,setToId]=useState(txn.toAccountId||"");
-  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
   const[date,setDate]=useState(txn.date);const[note,setNote]=useState(txn.note||"");const[mkRec,setMkRec]=useState(false);
   const cats=tp==="income"?incCats:expCats;
   const go=()=>{const a=evalExpr(amt);if(!a||a<=0)return;editTxn(txn.id,{type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note,recurring:mkRec||txn.recurring});if(mkRec)addRec({name:note||(tp==="transfer"?"Recurring transfer":cat),type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,day:+date.slice(8,10)||1,frequency:"monthly",startDate:date});close();};
@@ -2099,7 +2123,7 @@ function EditTxnModal({close,txn,data,editTxn,delTxn,addRec,expCats,incCats}){
 }
 
 
-function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrence,deleteRecFuture,editRecOccurrence}){
+function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrence,deleteRecFuture,editRecOccurrence,payRecurringOccurrence}){
   const[tp,setTp]=useState(rec.type||"expense");
   const[amt,setAmt]=useState(String(rec.amount||""));
   const[cat,setCat]=useState(rec.category||((rec.type||"expense")==="income"?incCats[0]:expCats[0]));
@@ -2108,7 +2132,7 @@ function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrenc
   const[toId,setToId]=useState(rec.toAccountId||"");
   const[name,setName]=useState(rec.name||"Recurring transaction");
   const accountOpts=entryAccountOptions(data,tp);
-  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
   const cats=tp==="income"?incCats:expCats;
   const save=(scope)=>{
     const a=evalExpr(amt);if(!a||a<=0)return;
@@ -2119,16 +2143,22 @@ function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrenc
     if(scope==="future"){if(window.confirm("Delete this and all upcoming recurring transactions? Previous processed transactions will remain.")){deleteRecFuture(rec.id,due);close();}}
     else {if(window.confirm("Delete only this scheduled transaction?")){skipRecOccurrence(rec.id,due);close();}}
   };
+  const paid=()=>{
+    const a=evalExpr(amt);if(!a||a<=0){alert("Enter a valid amount before marking this as paid.");return;}
+    const ch={name,amount:a,type:tp,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined};
+    if(payRecurringOccurrence&&payRecurringOccurrence(rec,due,ch))close();
+  };
   return <Sheet close={close} title="Recurring Transaction">
-    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:14,padding:12,marginBottom:12,fontSize:12,color:C.muted}}>Scheduled for <b style={{color:C.ink}}>{fmtDDMMYYYY(due)}</b>. Changes can apply only to this occurrence or to all upcoming occurrences from this date. Previous processed transactions are not changed.</div>
+    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:14,padding:12,marginBottom:12,fontSize:12,color:C.muted}}>Scheduled for <b style={{color:C.ink}}>{fmtDDMMYYYY(due)}</b>. This is only a grey reminder until you press Paid. Saving changes will keep it grey/scheduled; previous processed transactions are not changed.</div>
     <div style={{display:"flex",gap:6,marginBottom:14}}>{["expense","income","transfer"].map(t=><button key={t} onClick={()=>{setTp(t);const nc=t==="income"?incCats[0]:expCats[0];if(t!=="transfer"){setCat(nc);setSubcat(firstSub(nc,t));}}} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}</div>
     <L>Name / note</L><input style={F} value={name} onChange={e=>setName(e.target.value)} />
     <L>Amount (₹)</L><input style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)}/>
     {tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>{setCat(e.target.value);setSubcat(firstSub(e.target.value,tp));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>{subcatsFor(cat,tp).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,tp).map(sc=><option key={sc}>{sc}</option>)}</select></>}</>}
     <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}><option value="">Choose account</option>{accountOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     {tp==="transfer"&&<><L>To</L><select style={F} value={toId} onChange={e=>setToId(e.target.value)}><option value="">Choose account</option>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><button onClick={()=>save("this")} style={SB}>Save only this</button><button onClick={()=>save("future")} style={{...SB,background:C.brandDim,color:C.brand,boxShadow:"none"}}>Save upcoming</button></div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><button onClick={()=>del("this")} style={{...SB,background:"#FFF1F4",color:C.expense,boxShadow:"none"}}>Delete this</button><button onClick={()=>del("future")} style={{...SB,background:"#FFF1F4",color:C.expense,boxShadow:"none"}}>Delete upcoming</button></div>
+        <button onClick={paid} style={{...SB,background:C.income,color:"#fff",width:"100%",marginTop:8}}>Paid — Record this transaction</button>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><button onClick={()=>save("this")} style={SB}>Save only this</button><button onClick={()=>save("future")} style={{...SB,background:C.brandDim,color:C.brand,boxShadow:"none"}}>Save All Upcoming</button></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}><button onClick={()=>del("this")} style={{...SB,background:"#FFF1F4",color:C.expense,boxShadow:"none"}}>Delete this</button><button onClick={()=>del("future")} style={{...SB,background:"#FFF1F4",color:C.expense,boxShadow:"none"}}>Delete All Upcoming</button></div>
   </Sheet>;
 }
 
