@@ -554,6 +554,7 @@ function Main({data,persist,pin}){
   const editLoan=(id,out,ch={})=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch,outstandingAmount:+out}:a)});
   const editCC  =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
   const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),type:"expense",amount:+amt,category:"EMI",accountId:bankId,date:today(),note:note||"Loan payment"};const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});};
+  const payCC=(ccId,bankId,amt,note)=>{const txn={id:uid(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:ccId,date:today(),note:note||"Credit card payment",category:"Transfer"};const cc=data.accounts.find(a=>a.id===ccId);const newOut=Math.max(0,(+cc?.currentOutstanding||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===ccId?{...a,currentOutstanding:newOut}:a)});};
   const addGoal =g=>persist({...data,goals:[...data.goals,{...g,id:uid()}]});
   const delGoal =id=>persist({...data,goals:data.goals.filter(g=>g.id!==id)});
   const editGoal=(id,ch)=>persist({...data,goals:data.goals.map(g=>g.id===id?{...g,...ch}:g)});
@@ -635,7 +636,7 @@ function Main({data,persist,pin}){
       {modal?.type==="editloan"  &&<EditLoanModal   close={close} account={modal.account} editLoan={editLoan} delAcc={delAcc}/>} 
       {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} editCC={editCC} delAcc={delAcc}/>} 
       {modal?.type==="payloan"   &&<PayLoanModal    close={close} loan={modal.loan} bankAccounts={bankAccounts} payLoan={payLoan}/>} 
-      {modal?.type==="paycc"     &&<PayCCModal      close={close} cc={modal.cc} bankAccounts={bankAccounts} addTxn={addTxn}/>} 
+      {modal?.type==="paycc"     &&<PayCCModal      close={close} cc={modal.cc} bankAccounts={bankAccounts} payCC={payCC}/>} 
       {modal?.type==="goal"      &&<GoalModal       close={close} addGoal={addGoal} bankAccounts={bankAccounts}/>} 
       {modal?.type==="editgoal"  &&<EditGoalModal   close={close} goal={modal.goal} editGoal={editGoal} delGoal={delGoal}/>} 
       {modal?.type==="budget"    &&<BudgetModal     close={close} setBudget={setBudget} expCats={expCats} month={modal.month||curMo()} editKey={modal.key} editAmount={modal.amount} editScope={modal.scope}/>} 
@@ -854,9 +855,11 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
           <div style={{display:"grid",gap:14}}>
-            <AccountSection title="Saving Accounts" rows={accountRows.filter(a=>!["Loan","Credit Card","Mutual Fund","Insurance","Goal"].includes(a.type)&&!a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
-            <AccountSection title="Debt" rows={accountRows.filter(a=>["Loan","Credit Card"].includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
-            <AccountSection title="Investments" rows={accountRows.filter(a=>["Mutual Fund","Insurance"].includes(a.type)||a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Savings Account" rows={accountRows.filter(a=>!["Loan","Credit Card","Mutual Fund","Insurance","Goal"].includes(a.type)&&!a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Credit Cards" rows={accountRows.filter(a=>a.type==="Credit Card")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Debt" rows={accountRows.filter(a=>a.type==="Loan")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Investment" rows={accountRows.filter(a=>["Mutual Fund","Insurance"].includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Goals" rows={accountRows.filter(a=>a._goal||a.type==="Goal")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
           </div>
         </>
@@ -891,7 +894,9 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
       <div style={{fontSize:12.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
       {lastTxn&&!a._goal&&!(a.type==="Loan")&&<div style={{fontSize:11.5,fontWeight:850,marginTop:4,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
+      {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button><button onClick={e=>{e.stopPropagation();setModal("paycc",{cc:a});}} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.income,fontWeight:900}}>Pay</button></div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
+      {a.type==="Credit Card"&&<CreditCardFuelMeter card={a} value={accountValue(a)}/>} 
       {a._goal&&<GoalFuelMeter goal={a}/>} 
     </div>
   </div>;
@@ -926,6 +931,7 @@ function FinanceOnlyView({assets,debts,netWorth}){
 }
 function progressPct(value,target){const t=+target||0;if(t<=0)return 0;return Math.max(0,Math.min(100,((+value||0)/t)*100));}
 function loanPaidPct(a){const sanctioned=+a.sanctionedAmount||0;const outstanding=+a.outstandingAmount||Math.abs(+a.opening||0)||0;if(sanctioned<=0)return 0;return Math.max(0,Math.min(100,((sanctioned-outstanding)/sanctioned)*100));}
+function creditCardUsage(a,currentValue){const limit=+a.creditLimit||0;const used=Math.max(0,Math.abs(+currentValue||0));const available=Math.max(0,limit-used);const usedPct=limit>0?Math.min(100,(used/limit)*100):0;const availablePct=limit>0?Math.max(0,Math.min(100,(available/limit)*100)):0;return {limit,used,available,usedPct,availablePct,over:limit>0&&used>limit};}
 function accountGradient(a,i){
   if(a._goal||a.type==="Goal")return "linear-gradient(135deg,#FFC56D,#FF8A65)";
   if(a.type==="Loan"||a.type==="Credit Card")return "linear-gradient(135deg,#FF7F96,#E94D6A)";
@@ -948,6 +954,22 @@ function LoanFuelMeter({loan}){
   const outstanding=+loan.outstandingAmount||0;
   const sanctioned=+loan.sanctionedAmount||0;
   return <FuelMeter tone="loan" pct={pct} left={`Loan amount ${inr(sanctioned)}`} right=""/>;
+}
+function CreditCardFuelMeter({card,value}){
+  const u=creditCardUsage(card,value);
+  if(!u.limit)return <FuelMeter pct={0} left="Credit limit not set" right=""/>;
+  return <CreditLimitMeter availablePct={u.availablePct} usedPct={u.usedPct} over={u.over} left={`Available ${inr(u.available)}`} right={`Used ${inr(u.used)} / ${inr(u.limit)}`}/>;
+}
+function CreditLimitMeter({availablePct=0,usedPct=0,over=false,left="",right=""}){
+  const a=Math.max(0,Math.min(100,availablePct));
+  return <div style={{marginTop:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,fontWeight:850,color:over?C.expense:C.muted,marginBottom:5,gap:8}}><span>{left}</span><span style={{textAlign:"right"}}>{right}</span></div>
+    <div style={{height:15,borderRadius:999,background:"#FFE8EE",position:"relative",overflow:"hidden",border:`1px solid ${over?"rgba(233,77,106,.30)":"rgba(233,77,106,.14)"}`,boxShadow:"inset 0 1px 4px rgba(233,77,106,.12)"}}>
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${a}%`,borderRadius:999,background:over?"#FFE8EE":"linear-gradient(90deg,#DCFCE7,#24C26A)",boxShadow:"0 0 14px rgba(36,194,106,.18)"}}/>
+      <div style={{position:"absolute",right:0,top:0,bottom:0,width:`${Math.min(100,usedPct)}%`,borderRadius:999,background:over?"linear-gradient(90deg,#FB7185,#E94D6A)":"linear-gradient(90deg,rgba(251,113,133,.55),rgba(233,77,106,.75))",opacity:over?1:.72}}/>
+      <div style={{position:"absolute",left:`calc(${a}% - 8px)`,top:-2,width:18,height:18,borderRadius:"50%",background:"#fff",border:`4px solid ${over?C.expense:"#24C26A"}`,boxShadow:"0 2px 8px rgba(0,0,0,.18)"}}/>
+    </div>
+  </div>;
 }
 function GoalFuelMeter({goal}){
   const pct=progressPct(goal.value,goal.target);
@@ -1572,14 +1594,13 @@ function EditCCModal({close,account,editCC,delAcc}){
   const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
   const[lim,setLim]=useState(account.creditLimit||0);
   const[dueDay,setDueDay]=useState(account.dueDay||"");
-  const util=lim>0?Math.min(100,out/lim*100):0;
   return(<Sheet close={close} title="Update Card">
     <LogoSelector value={logoKey} onChange={setLogoKey} types={["Credit Card"]}/><L>Credit limit (₹)</L><input style={F} type="number" value={lim} onChange={e=>setLim(e.target.value)}/>
     <L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
     <L>Due day (1-31)</L><input style={F} type="number" min="1" max="31" value={dueDay} onChange={e=>setDueDay(e.target.value)} placeholder="e.g. 15"/>
     <div style={{background:C.bg,borderRadius:10,padding:12,marginBottom:12}}>
-      <div style={{fontSize:12,color:C.muted,marginBottom:6}}>Utilisation: {Math.round(util)}%</div>
-      <div style={{height:8,background:"#EEF3FF",borderRadius:4,position:"relative"}}><div style={{width:`${util}%`,height:"100%",background:util<20?C.brand:util<50?C.gold:C.expense,borderRadius:4}}/><div style={{position:"absolute",left:"20%",top:0,bottom:0,width:2,background:C.ink,opacity:0.4}}/></div>
+      <div style={{fontSize:12,color:C.muted,marginBottom:6}}>Available credit reduces as the card is used.</div>
+      <CreditLimitMeter {...creditCardUsage({...account,creditLimit:+lim},-(+out||0))}/>
     </div>
     <button onClick={()=>{editCC(account.id,{currentOutstanding:+out,creditLimit:+lim,dueDay:+dueDay||0,logoKey});close();}} style={SB}>Update</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this credit card account?")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete credit card</button>}
@@ -1598,7 +1619,7 @@ function PayLoanModal({close,loan,bankAccounts,payLoan}){
   </Sheet>);
 }
 
-function PayCCModal({close,cc,bankAccounts,addTxn}){
+function PayCCModal({close,cc,bankAccounts,payCC}){
   const[amt,setAmt]=useState(""), [bankId,setBankId]=useState(bankAccounts[0]?.id||""), [note,setNote]=useState(`${cc.name} payment`);
   const a=evalExpr(amt);
   return(<Sheet close={close} title={`Pay Bill — ${cc.name}`}>
@@ -1606,7 +1627,7 @@ function PayCCModal({close,cc,bankAccounts,addTxn}){
     <L>Payment amount (₹)</L><input autoFocus style={F} type="number" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="Full or partial amount"/>
     <L>Pay from</L><select style={F} value={bankId} onChange={e=>setBankId(e.target.value)}>{bankAccounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     <L>Note</L><input style={F} value={note} onChange={e=>setNote(e.target.value)}/>
-    <button onClick={()=>{if(!a||a<=0||!bankId)return;addTxn({type:"transfer",amount:a,accountId:bankId,toAccountId:cc.id,date:today(),note,category:"Transfer"});close();}} style={SB}>Pay {!isNaN(a)&&a>0?inr(a):""}</button>
+    <button onClick={()=>{if(!a||a<=0||!bankId)return;payCC(cc.id,bankId,a,note);close();}} style={SB}>Pay {!isNaN(a)&&a>0?inr(a):""}</button>
   </Sheet>);
 }
 
