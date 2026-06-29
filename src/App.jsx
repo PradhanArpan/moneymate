@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.3 LIC Premium Schedule
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.4 Goals + Lended
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -72,12 +72,13 @@ const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings"];
 const CC_TYPES      = ["Visa","Mastercard","Amex","RuPay","HDFC CC","SBI CC","ICICI CC","Axis CC","Other CC"];
 const LOAN_TYPES    = ["Car Loan","Home Loan","Personal Loan","Education Loan","Business Loan","Gold Loan","Other Loan"];
 const INVEST_TYPES  = ["Mutual Fund","Stocks","PPF","EPF","NPS","SGB","Gold / SGB","Bonds","FD","Insurance","Life Insurance","Term Insurance","Health Insurance","Other"];
+const LEND_TYPES    = ["Lended"];
 const INSURANCE_TYPES = ["Life Insurance","Term Insurance","Health Insurance","ULIP / Endowment","Pension / Annuity","Other Insurance"];
 const CAT_EMOJI = {
   ...Object.fromEntries(EXPENSE_STRUCTURE.map(c=>[c.name,c.emoji])),
   ...Object.fromEntries(INCOME_STRUCTURE.map(c=>[c.name,c.emoji])),
   ...Object.fromEntries(TRANSFER_STRUCTURE.map(c=>[c.name,c.emoji])),
-  Transfer:"↔️",Cashback:"✨",Adjustments:"📌",Insurance:"🛡️",
+  Transfer:"↔️",Cashback:"✨",Adjustments:"📌",Insurance:"🛡️",Lended:"🤝",
 };
 const isInsuranceAccount=a=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(a?.type);
 const policyFrequencyLabel=f=>f==="halfyearly"?"Half-yearly":f==="yearly"?"Yearly":f==="monthly"?"Monthly":(f||"—");
@@ -395,8 +396,33 @@ const normalize=d=>{
     recurring,
     customCats:{expense:[],income:[],...(d.customCats||{})},
     budgetOverrides:d.budgetOverrides||{},
-    goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
+    goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",linkedAccountIds:[],investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
   };
+};
+const goalLinkedIds=g=>Array.isArray(g?.linkedAccountIds)?g.linkedAccountIds.filter(Boolean):(g?.linkedAccountId?[g.linkedAccountId]:[]);
+const goalSavedValue=(g,accounts=[],balances={})=>{
+  if(g?.linkType==="account"&&g.linkedAccountId)return Math.max(0,balances[g.linkedAccountId]||0);
+  if(g?.linkType==="multiaccount"||g?.linkType==="portfolio")return goalLinkedIds(g).reduce((s,id)=>s+Math.max(0,balances[id]||0),0);
+  if(g?.linkType==="investment")return +g.investmentValue||0;
+  return +g?.saved||0;
+};
+const goalTypeLabel=(g,accounts=[])=>{
+  if(g?.linkType==="account")return "Linked account goal";
+  if(g?.linkType==="multiaccount"||g?.linkType==="portfolio")return "Linked portfolio goal";
+  if(g?.linkType==="investment")return g.investmentType||"Investment goal";
+  return "Savings goal";
+};
+const assetAccountValue=(a,v)=>{
+  if(!a)return 0;
+  if(["Loan","Credit Card","Term Insurance","Health Insurance","Goal"].includes(a.type))return 0;
+  if(a.type==="Lended"&&a.lendDirection==="from")return 0;
+  return Math.max(0,+v||0);
+};
+const debtAccountValue=(a,v)=>{
+  if(!a)return 0;
+  if(a.type==="Loan"||a.type==="Credit Card")return Math.abs(+v||0);
+  if(a.type==="Lended"&&a.lendDirection==="from")return Math.abs(+v||0);
+  return 0;
 };
 
 /* ── AES-256-GCM ─────────────────────────────────────────────────── */
@@ -717,11 +743,17 @@ function Main({data,persist,pin}){
 
   const balances=useMemo(()=>{
     const b={};
-    data.accounts.forEach(a=>{if(a.type==="Loan")b[a.id]=-(a.outstandingAmount||0);else if(a.type==="Credit Card")b[a.id]=-(a.currentOutstanding||0);else b[a.id]=+a.opening||0;});
+    data.accounts.forEach(a=>{
+      if(a.type==="Loan")b[a.id]=-(a.outstandingAmount||0);
+      else if(a.type==="Credit Card")b[a.id]=-(a.currentOutstanding||0);
+      else if(a.type==="Lended")b[a.id]=a.lendDirection==="from"?-Math.abs(+a.opening||0):Math.abs(+a.opening||0);
+      else if(a.type==="Goal")b[a.id]=0;
+      else b[a.id]=+a.opening||0;
+    });
     data.transactions.forEach(t=>{const amt=+t.amount||0;if(t.type==="income")b[t.accountId]=(b[t.accountId]||0)+amt;else if(t.type==="expense")b[t.accountId]=(b[t.accountId]||0)-amt;else if(t.type==="transfer"){b[t.accountId]=(b[t.accountId]||0)-amt;if(t.toAccountId)b[t.toAccountId]=(b[t.toAccountId]||0)+amt;}});
     return b;
   },[data]);
-  const netWorth=Object.values(balances).reduce((s,v)=>s+v,0);
+  const netWorth=data.accounts.reduce((s,a)=>a.type==="Goal"?s:s+(balances[a.id]||0),0);
   const ccDueAlerts=useMemo(()=>{const todayNum=new Date().getDate();return data.accounts.filter(a=>a.type==="Credit Card"&&a.dueDay).map(a=>{const due=a.dueDay,diff=due>=todayNum?due-todayNum:30-todayNum+due;return diff<=7?{...a,daysLeft:diff}:null;}).filter(Boolean);},[data]);
   const backupReminder=daysSinceBackup()>30;
 
@@ -768,8 +800,8 @@ function Main({data,persist,pin}){
       {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} editCC={editCC} delAcc={delAcc}/>} 
       {modal?.type==="payloan"   &&<PayLoanModal    close={close} loan={modal.loan} bankAccounts={bankAccounts} payLoan={payLoan}/>} 
       {modal?.type==="paycc"     &&<PayCCModal      close={close} cc={modal.cc} bankAccounts={bankAccounts} payCC={payCC}/>} 
-      {modal?.type==="goal"      &&<GoalModal       close={close} addGoal={addGoal} bankAccounts={bankAccounts}/>} 
-      {modal?.type==="editgoal"  &&<EditGoalModal   close={close} goal={modal.goal} editGoal={editGoal} delGoal={delGoal}/>} 
+      {modal?.type==="goal"      &&<GoalModal       close={close} addGoal={addGoal} bankAccounts={bankAccounts} accounts={data.accounts}/>} 
+      {modal?.type==="editgoal"  &&<EditGoalModal   close={close} goal={modal.goal} editGoal={editGoal} delGoal={delGoal} accounts={data.accounts} balances={balances}/>} 
       {modal?.type==="budget"    &&<BudgetModal     close={close} setBudget={setBudget} expCats={expCats} month={modal.month||curMo()} editKey={modal.key} editAmount={modal.amount} editScope={modal.scope}/>} 
       {modal?.type==="addcat"    &&<AddCategoryModal close={close} addCat={addCat} expCats={expCats}/>} 
       {modal?.type==="import"    &&<ImportModal     close={close} data={data} importBatch={importBatch} expCats={expCats} incCats={incCats}/>} 
@@ -951,18 +983,18 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const[section,setSection]=useState("accounts");
   const[detail,setDetail]=useState(null);
   const debtTypes=["Loan","Credit Card"];
-  const goalSaved=g=>{if(g.linkType==="account"&&g.linkedAccountId)return Math.max(0,balances[g.linkedAccountId]||0);if(g.linkType==="investment")return g.investmentValue||0;return g.saved||0;};
+  const goalSaved=g=>goalSavedValue(g,data.accounts,balances);
   const goalRows=(data.goals||[]).map(g=>({_goal:g,id:`goal-${g.id}`,name:g.name,type:"Goal",value:goalSaved(g),target:g.target,targetDate:g.targetDate,linkType:g.linkType,linkedAccountId:g.linkedAccountId,logoKey:g.logoKey||"goal"}));
   const accountRows=[...data.accounts,...goalRows];
-  const assetValue=data.accounts.reduce((s,a)=>{const v=balances[a.id]||0;if(debtTypes.includes(a.type)||a.type==="Term Insurance"||a.type==="Health Insurance")return s;return s+Math.max(0,v);},0);
-  const debtValue=data.accounts.reduce((s,a)=>debtTypes.includes(a.type)?s+Math.abs(balances[a.id]||0):s,0);
+  const assetValue=data.accounts.reduce((s,a)=>s+assetAccountValue(a,balances[a.id]||0),0);
+  const debtValue=data.accounts.reduce((s,a)=>s+debtAccountValue(a,balances[a.id]||0),0);
   const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
   const lastTxnFor=id=>[...data.transactions].filter(t=>t.accountId===id||t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const lastPaidForCC=id=>[...data.transactions].filter(t=>t.type==="transfer"&&t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const accountSub=a=>{
     if(a._goal){
       const pct=progressPct(a.value,a.target);
-      return `${a.linkType==="account"?"Linked account goal":a.linkType==="investment"?"Investment goal":"Savings goal"} · ${Math.round(pct)}%`;
+      return `${goalTypeLabel(a._goal||a)} · ${Math.round(pct)}% · linked value ${inr(a.value||0)}`;
     }
     if(a.type==="Loan"){
       const pct=loanPaidPct(a);
@@ -973,6 +1005,10 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
       const due=a.dueDay?`Due Date ${ordinalDay(a.dueDay)}`:"Due Date not set";
       const last=paid?`Last Paid ${fmtShortDate(paid.date)}`:"Last Paid —";
       return `${a.ccType||"Credit Card"} · ${due} · ${last}`;
+    }
+    if(a.type==="Lended"){
+      const who=a.personName||a.name;
+      return a.lendDirection==="from"?`Borrowed from ${who}`:`Lent to ${who}`;
     }
     if(isInsuranceAccount(a)){
       const prem=a.premiumAmount?`Premium ${inr(a.premiumAmount)} ${policyFrequencyLabel(a.premiumFrequency)}`:"Premium not set";
@@ -1001,6 +1037,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
             <AccountSection title="Savings Account" rows={accountRows.filter(a=>!a._goal&&BANK_TYPES.includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Credit Cards" rows={accountRows.filter(a=>a.type==="Credit Card")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Debt" rows={accountRows.filter(a=>a.type==="Loan")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Lended" rows={accountRows.filter(a=>a.type==="Lended")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Investment" rows={accountRows.filter(a=>INVEST_TYPES.includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Goals" rows={accountRows.filter(a=>a._goal||a.type==="Goal")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
@@ -1080,6 +1117,7 @@ function creditCardUsage(a,currentValue){const limit=+a.creditLimit||0;const use
 function accountGradient(a,i){
   if(a._goal||a.type==="Goal")return "linear-gradient(135deg,#FFC56D,#FF8A65)";
   if(a.type==="Loan"||a.type==="Credit Card")return "linear-gradient(135deg,#FF7F96,#E94D6A)";
+  if(a.type==="Lended")return a.lendDirection==="from"?"linear-gradient(135deg,#FFB4B4,#F97373)":"linear-gradient(135deg,#8FE3CF,#22B8A9)";
   if(INVEST_TYPES.includes(a.type))return "linear-gradient(135deg,#41D6B1,#13A58E)";
   return i%2?"linear-gradient(135deg,#22B8A9,#1A9C92)":"linear-gradient(135deg,#8E72FF,#6C5CE7)";
 }
@@ -1337,18 +1375,20 @@ function BudgetBand({title,sub,amount,budget,color}){return <div style={{backgro
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function GoalsTab({data,balances,bankAccounts,delGoal,editGoal,setModal}){
   const[detail,setDetail]=useState(null);
-  const getSaved=g=>{if(g.linkType==="account"&&g.linkedAccountId)return balances[g.linkedAccountId]||0;if(g.linkType==="investment")return g.investmentValue||0;return g.saved||0;};
+  const getSaved=g=>goalSavedValue(g,data.accounts,balances);
+  const linkedAccounts=g=>goalLinkedIds(g).map(id=>data.accounts.find(a=>a.id===id)).filter(Boolean);
   if(detail){
     const g=data.goals.find(x=>x.id===detail);if(!g){setDetail(null);return null;}
     const saved=getSaved(g),pct=Math.min(100,saved/g.target*100),done=pct>=100;
     const linked=g.linkType==="account"?data.accounts.find(a=>a.id===g.linkedAccountId):null;
+    const linkedMany=linkedAccounts(g);
     const moLeft=g.targetDate?monthsBetween(today(),g.targetDate):null;
     const moSavNeed=moLeft>0&&!done?Math.ceil((g.target-saved)/moLeft):null;
     const onTrack=moSavNeed?moSavNeed<=(data.transactions.filter(t=>t.type==="income"&&mkKey(t.date)===curMo()).reduce((s,t)=>s+(+t.amount),0)*0.3):null;
     return(<div style={{padding:"52px 16px 0"}}>
       <button onClick={()=>setDetail(null)} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.brand,fontSize:14,fontWeight:600,cursor:"pointer",marginBottom:16,padding:0}}><ArrowLeft size={18}/> Back</button>
       <div style={{background:"linear-gradient(160deg,#0D1B2A,#0B3D2E)",borderRadius:16,padding:20,marginBottom:16,color:"#fff"}}>
-        <div style={{fontSize:11,color:"#6B9A8A",textTransform:"uppercase"}}>{g.linkType==="account"?"Linked Account Goal":g.linkType==="investment"?g.investmentType:"Savings Goal"}</div>
+        <div style={{fontSize:11,color:"#6B9A8A",textTransform:"uppercase"}}>{goalTypeLabel(g,data.accounts)}</div>
         <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,margin:"6px 0"}}>{g.name}</div>
         <div style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:700,color:done?C.brand:C.gold}}>{inr(saved)}</div>
         <div style={{fontSize:12,color:"#6B9A8A"}}>of {inr(g.target)} target{g.targetDate?` · by ${new Date(g.targetDate).toLocaleDateString("en-IN",{month:"short",year:"numeric"})}`:""}</div>
@@ -1360,6 +1400,7 @@ function GoalsTab({data,balances,bankAccounts,delGoal,editGoal,setModal}){
         <div style={{fontSize:13,color:C.ink,marginTop:4}}>Save <b>{inr(moSavNeed)}/month</b> to reach your goal in <b>{moLeft} months</b>.</div>
       </div>}
       {g.linkType==="account"&&linked&&<div style={{background:C.card,borderRadius:14,padding:16,marginBottom:14}}><Eye>Linked account</Eye><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}><div><div style={{fontSize:14,fontWeight:700}}>{linked.name}</div><div style={{fontSize:12,color:C.muted}}>Auto-updates with balance</div></div><div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:700,color:C.brand}}>{inr(balances[linked.id]||0)}</div></div></div>}
+      {(g.linkType==="multiaccount"||g.linkType==="portfolio")&&linkedMany.length>0&&<div style={{background:C.card,borderRadius:14,padding:16,marginBottom:14}}><Eye>Linked accounts / investments</Eye><div style={{display:"grid",gap:8,marginTop:8}}>{linkedMany.map(a=><div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div style={{fontSize:13,fontWeight:750,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div><div style={{fontSize:13,fontWeight:900,color:C.brand}}>{inr(Math.max(0,balances[a.id]||0))}</div></div>)}</div><div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",fontWeight:900}}><span>Total linked value</span><span>{inr(saved)}</span></div></div>}
       {g.linkType==="investment"&&<div style={{background:C.card,borderRadius:14,padding:16,marginBottom:14}}><Eye>Investment</Eye><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}><div><div style={{fontSize:14,fontWeight:700}}>{g.investmentType}</div><div style={{fontSize:12,color:C.muted}}>Updated {g.investmentValueDate||"—"}</div></div><div style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:700,color:C.gold}}>{inr(g.investmentValue||0)}</div></div><button onClick={()=>setModal("editgoal",{goal:g})} style={{marginTop:12,display:"flex",alignItems:"center",gap:6,background:C.brandDim,border:`1px solid ${C.brand}`,borderRadius:10,padding:"8px 14px",color:C.brand,fontWeight:700,fontSize:13,cursor:"pointer"}}><RefreshCw size={14}/> Update value</button></div>}
       {g.linkType==="none"&&!done&&<button onClick={()=>{const a=+window.prompt("Amount to add (₹):");if(a>0)editGoal(g.id,{saved:(g.saved||0)+a});}} style={{...SB,marginBottom:14}}>+ Add Money</button>}
       <div style={{display:"flex",gap:10}}>
@@ -1377,10 +1418,11 @@ function GoalsTab({data,balances,bankAccounts,delGoal,editGoal,setModal}){
       {data.goals.map(g=>{
         const saved=getSaved(g),pct=Math.min(100,saved/g.target*100),done=pct>=100;
         const linked=g.linkType==="account"?data.accounts.find(a=>a.id===g.linkedAccountId):null;
+        const many=linkedAccounts(g);
         const moLeft=g.targetDate?monthsBetween(today(),g.targetDate):null;
         return(<div key={g.id} onClick={()=>setDetail(g.id)} style={{background:C.card,borderRadius:16,padding:16,boxShadow:"0 2px 10px rgba(0,0,0,0.06)",border:done?`1px solid ${C.brand}`:`1px solid ${C.border}`,cursor:"pointer"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-            <div><div style={{fontSize:15,fontWeight:700}}>{done?"🎉 ":""}{g.name}</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>{g.linkType==="account"&&linked?`🏦 ${linked.name}`:g.linkType==="investment"?`📈 ${g.investmentType}`:"🪙 Manual"}{moLeft!==null?` · ${moLeft}mo left`:""}</div></div>
+            <div><div style={{fontSize:15,fontWeight:700}}>{done?"🎉 ":""}{g.name}</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>{g.linkType==="account"&&linked?`🏦 ${linked.name}`:(g.linkType==="multiaccount"||g.linkType==="portfolio")?`📊 ${many.length} linked accounts`:g.linkType==="investment"?`📈 ${g.investmentType}`:"🪙 Manual"}{moLeft!==null?` · ${moLeft}mo left`:""}</div></div>
             <div style={{textAlign:"right"}}><div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:700,color:done?C.brand:C.ink}}>{inr(saved)}</div><div style={{fontSize:11,color:done?C.brand:C.muted,fontWeight:600}}>{Math.round(pct)}% of {inr(g.target)}</div></div>
           </div>
           <div style={{height:8,background:C.bg,borderRadius:4}}><div style={{width:`${pct}%`,height:"100%",background:done?C.brand:g.linkType==="investment"?C.xfer:C.gold,borderRadius:4,transition:"width .4s"}}/></div>
@@ -1714,6 +1756,9 @@ function AccountPickerModal({close,setModal}){
       {label:"Loan",desc:"Personal, car, education or other loan",go:()=>setModal("loan",{title:"Add Loan",presetLoanType:"Personal Loan"})},
       {label:"Mortgage",desc:"Home loan / housing mortgage",go:()=>setModal("loan",{title:"Add Mortgage",presetLoanType:"Home Loan"})},
     ]},
+    {title:"Lended",sub:"Money lent to someone or borrowed from someone",items:[
+      {label:"Lent / Borrowed",desc:"Track person-wise amount using transfers",go:()=>setModal("account",{title:"Add Lended",presetType:"Lended"})},
+    ]},
     {title:"Investment",sub:"Mutual Fund, PPF, EPF, NPS, SGB, Stocks, Insurance",items:[
       {label:"Mutual Fund",desc:"Track mutual fund value",go:()=>setModal("account",{title:"Add Mutual Fund",presetType:"Mutual Fund"})},
       {label:"Stocks",desc:"Track demat / stock portfolio value",go:()=>setModal("account",{title:"Add Stocks",presetType:"Stocks"})},
@@ -1740,10 +1785,10 @@ function AccountPickerModal({close,setModal}){
 }
 
 function AccountModal({close,addAcc,addRec,data,presetType,title}){
-  const allTypes=[...BANK_TYPES,...INVEST_TYPES];
+  const allTypes=[...BANK_TYPES,...INVEST_TYPES,...LEND_TYPES];
   const isInsuranceType=t=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(t);
   const defaultLogo=presetType==="Health Insurance"||presetType==="Term Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
-  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
   const isIns=isInsuranceType(f.type);
   const bankOpts=(data?.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Savings");
   const isProtection=f.type==="Term Insurance"||f.type==="Health Insurance"||f.policyType==="Term Insurance"||f.policyType==="Health Insurance";
@@ -1751,6 +1796,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
     if(!f.name)return;
     const id=uid();
     const clean={id,name:f.name,type:f.type,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey};
+    if(f.type==="Lended"){Object.assign(clean,{lendDirection:f.lendDirection,personName:f.personName||f.name});}
     if(isIns){Object.assign(clean,{status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch});}
     const rec=[];
     if(isIns&&f.makeRecurring&&f.premiumAmount&&f.payFromId){
@@ -1792,7 +1838,12 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,marginBottom:12,cursor:"pointer"}}><input type="checkbox" checked={f.makeRecurring} onChange={e=>setF({...f,makeRecurring:e.target.checked})} style={{width:16,height:16,accentColor:C.brand}}/>Create recurring premium reminder/payment</label>
       {f.makeRecurring&&<><L>Pay premium from</L><select style={F} value={f.payFromId} onChange={s("payFromId")}><option value="">Select bank/cash account</option>{bankOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><p style={{fontSize:12,color:C.muted,marginTop:-8}}>Life/endowment premiums are recorded as transfers to the policy account. Term/health premiums are recorded as Health → Insurance Premium expense.</p></>}
     </>}
-    {!isIns&&<><L>Current balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/></>}
+    {f.type==="Lended"&&<>
+      <L>Direction</L><select style={F} value={f.lendDirection} onChange={s("lendDirection")}><option value="to">I gave money to this person</option><option value="from">I received / borrowed money from this person</option></select>
+      <L>Person / party name</L><input style={F} value={f.personName} onChange={s("personName")} placeholder="e.g. John / Friend / Office advance"/>
+      <div style={{fontSize:12,color:C.muted,margin:"-6px 0 12px"}}>Use Transfer later: Bank → Lended when you give money; Lended → Bank when they repay. For borrowed money, use Lended → Bank when you receive and Bank → Lended when you repay.</div>
+    </>}
+    {!isIns&&<><L>{f.type==="Lended"?"Current amount (₹)":"Current balance (₹)"}</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/></>}
     <L>{isIns?"Policy / account number":"Account number"}</L><input style={F} value={f.accountNumber} onChange={s("accountNumber")} placeholder={isIns?"Policy number":"Full account number"}/>
     <L>Last 4 digits (for PDF auto-match)</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")} placeholder="e.g. 4821"/>
     <button onClick={save} style={SB}>Save</button>
@@ -1814,11 +1865,16 @@ function CreditCardModal({close,addAcc}){
 }
 
 function EditAccModal({close,account,editAcc,delAcc}){
-  const[f,setF]=useState({name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(account.type);
+  const[f,setF]=useState({type:account.type,name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||"",lendDirection:account.lendDirection||"to",personName:account.personName||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(account.type);
   return(<Sheet close={close} title="Edit Account">
     <L>Name</L><input style={F} value={f.name} onChange={s("name")}/>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[account.type]}/><L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
-    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>{isIns&&<>
+    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>
+    {f.type==="Lended"&&<>
+      <L>Direction</L><select style={F} value={f.lendDirection} onChange={s("lendDirection")}><option value="to">I gave money to this person</option><option value="from">I received / borrowed money from this person</option></select>
+      <L>Person / party name</L><input style={F} value={f.personName} onChange={s("personName")} placeholder="e.g. John / Friend / Office advance"/>
+      <div style={{fontSize:12,color:C.muted,margin:"-6px 0 12px"}}>Use Transfer later: Bank → Lended when you give money; Lended → Bank when they repay. For borrowed money, use Lended → Bank when you receive and Bank → Lended when you repay.</div>
+    </>}{isIns&&<>
       <L>Policy type</L><select style={F} value={f.policyType} onChange={s("policyType")}>{INSURANCE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
       <L>Status</L><select style={F} value={f.status} onChange={s("status")}><option>Active</option><option>Paid-up</option><option>Matured</option><option>Closed</option></select>
       <L>Plan type</L><input style={F} value={f.planType} onChange={s("planType")}/>
@@ -1845,7 +1901,7 @@ function EditAccModal({close,account,editAcc,delAcc}){
     </>}
     <L>Account number</L><input style={F} value={f.accountNumber} onChange={s("accountNumber")}/>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")}/>
-    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch});close();}} style={SB}>Save</button>
+    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch,lendDirection:f.lendDirection,personName:f.personName});close();}} style={SB}>Save</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this account? Transactions linked to it will also be removed.")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete account</button>}
   </Sheet>);
 }
@@ -1919,31 +1975,40 @@ function PayCCModal({close,cc,bankAccounts,payCC}){
   </Sheet>);
 }
 
-function GoalModal({close,addGoal,bankAccounts}){
+function GoalModal({close,addGoal,bankAccounts,accounts=[]}){
   const[name,setName]=useState(""),  [target,setTarget]=useState(""), [targetDate,setTargetDate]=useState("");
   const[lt,setLt]=useState("none"), [accId,setAccId]=useState(bankAccounts[0]?.id||"");
   const[iType,setIType]=useState(INVEST_TYPES[0]), [iVal,setIVal]=useState(""), [saved,setSaved]=useState("");
   const[logoKey,setLogoKey]=useState("goal");
-  const go=()=>{if(!name||!target)return;const g={name,target:+target,targetDate,linkType:lt,logoKey};if(lt==="none")g.saved=+saved||0;if(lt==="account")g.linkedAccountId=accId;if(lt==="investment"){g.investmentType=iType;g.investmentValue=+iVal||0;g.investmentValueDate=today();}addGoal(g);close();};
+  const selectable=accounts.filter(a=>!["Loan","Credit Card","Term Insurance","Health Insurance"].includes(a.type));
+  const defaultMulti=selectable.filter(a=>["Mutual Fund","Stocks"].includes(a.type)).map(a=>a.id);
+  const[multiIds,setMultiIds]=useState(defaultMulti);
+  const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
+  const go=()=>{if(!name||!target)return;const g={name,target:+target,targetDate,linkType:lt,logoKey};if(lt==="none")g.saved=+saved||0;if(lt==="account")g.linkedAccountId=accId;if(lt==="investment"){g.investmentType=iType;g.investmentValue=+iVal||0;g.investmentValueDate=today();}if(lt==="multiaccount")g.linkedAccountIds=multiIds;addGoal(g);close();};
   return(<Sheet close={close} title="New Goal">
-    <L>Goal name</L><input style={F} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Emergency Fund"/>
+    <L>Goal name</L><input style={F} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Emergency Fund / Investments"/>
     <LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Target amount (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)} placeholder="100000"/>
     <L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/>
-    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>App will calculate how much to save monthly to reach it on time.</p>
+    <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Linked goals show existing account / investment balances without adding them again to total assets.</p>
     <L>Type</L>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:14}}>
-      {[["none","🪙 Manual"],["account","🏦 Account"],["investment","📈 Invest"]].map(([v,l])=><button key={v} onClick={()=>setLt(v)} style={{padding:"10px 4px",borderRadius:10,border:`1px solid ${lt===v?C.brand:C.border}`,background:lt===v?C.brandDim:"#fff",color:lt===v?C.brand:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",textAlign:"center"}}>{l}</button>)}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:14}}>
+      {[["none","🪙 Manual"],["account","🏦 One account"],["multiaccount","📊 Multiple accounts"],["investment","📈 Manual investment"]].map(([v,l])=><button key={v} onClick={()=>setLt(v)} style={{padding:"10px 4px",borderRadius:10,border:`1px solid ${lt===v?C.brand:C.border}`,background:lt===v?C.brandDim:"#fff",color:lt===v?C.brand:C.muted,fontSize:11,fontWeight:700,cursor:"pointer",textAlign:"center"}}>{l}</button>)}
     </div>
     {lt==="none"&&<><L>Already saved (₹)</L><input style={F} type="number" value={saved} onChange={e=>setSaved(e.target.value)} placeholder="0"/></>}
     {lt==="account"&&(bankAccounts.length>0?<><L>Linked account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{bankAccounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>:<p style={{color:C.expense,fontSize:13}}>No bank accounts found.</p>)}
+    {lt==="multiaccount"&&<><L>Select accounts / investments to track</L><div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>{selectable.map(a=><label key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:750,cursor:"pointer"}}><input type="checkbox" checked={multiIds.includes(a.id)} onChange={()=>toggleId(a.id)} style={{width:16,height:16,accentColor:C.brand}}/><span style={{flex:1}}>{a.name}</span><span style={{fontSize:11,color:C.muted}}>{a.type}</span></label>)}</div><div style={{fontSize:12,color:C.muted,margin:"-4px 0 12px"}}>Example: choose Stocks + Mutual Fund to create one investment-tracking goal.</div></>}
     {lt==="investment"&&<><L>Type</L><select style={F} value={iType} onChange={e=>setIType(e.target.value)}>{INVEST_TYPES.map(t=><option key={t}>{t}</option>)}</select><L>Current value (₹)</L><input style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)} placeholder="0"/></>}
     <button onClick={go} style={SB}>Save Goal</button>
   </Sheet>);
 }
 
-function EditGoalModal({close,goal,editGoal,delGoal}){
+function EditGoalModal({close,goal,editGoal,delGoal,accounts=[],balances={}}){
   const[name,setName]=useState(goal.name), [target,setTarget]=useState(goal.target), [iVal,setIVal]=useState(goal.investmentValue||""), [targetDate,setTargetDate]=useState(goal.targetDate||""), [logoKey,setLogoKey]=useState(goal.logoKey||"goal");
+  const selectable=accounts.filter(a=>!["Loan","Credit Card","Term Insurance","Health Insurance"].includes(a.type));
+  const[multiIds,setMultiIds]=useState(goalLinkedIds(goal));
+  const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
   if(goal.linkType==="investment")return(<Sheet close={close} title="Update Value"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><div style={{textAlign:"center",marginBottom:18}}><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:700,color:C.gold}}>{inr(goal.investmentValue||0)}</div><div style={{fontSize:12,color:C.muted}}>{goal.investmentType}</div></div><L>New value (₹)</L><input autoFocus style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)}/><button onClick={()=>{if(!iVal)return;editGoal(goal.id,{investmentValue:+iVal,investmentValueDate:today(),logoKey});close();}} style={SB}>Update</button>{delGoal&&<button onClick={()=>{if(window.confirm("Delete this goal?")){delGoal(goal.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete goal</button>}</Sheet>);
+  if(goal.linkType==="multiaccount"||goal.linkType==="portfolio")return(<Sheet close={close} title="Edit Linked Goal"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Name</L><input style={F} value={name} onChange={e=>setName(e.target.value)}/><L>Target (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)}/><L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/><L>Linked accounts / investments</L><div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>{selectable.map(a=><label key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:750,cursor:"pointer"}}><input type="checkbox" checked={multiIds.includes(a.id)} onChange={()=>toggleId(a.id)} style={{width:16,height:16,accentColor:C.brand}}/><span style={{flex:1}}>{a.name}</span><span style={{fontSize:11,color:C.muted}}>{inr(Math.max(0,balances[a.id]||0))}</span></label>)}</div><button onClick={()=>{if(!name||!target)return;editGoal(goal.id,{name,target:+target,targetDate,logoKey,linkedAccountIds:multiIds,linkType:"multiaccount"});close();}} style={SB}>Save</button>{delGoal&&<button onClick={()=>{if(window.confirm("Delete this goal?")){delGoal(goal.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete goal</button>}</Sheet>);
   return(<Sheet close={close} title="Edit Goal"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><L>Name</L><input style={F} value={name} onChange={e=>setName(e.target.value)}/><L>Target (₹)</L><input style={F} type="number" value={target} onChange={e=>setTarget(e.target.value)}/><L>Target date (optional)</L><input style={F} type="date" value={targetDate} onChange={e=>setTargetDate(e.target.value)}/><button onClick={()=>{if(!name||!target)return;editGoal(goal.id,{name,target:+target,targetDate,logoKey});close();}} style={SB}>Save</button>{delGoal&&<button onClick={()=>{if(window.confirm("Delete this goal?")){delGoal(goal.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete goal</button>}</Sheet>);
 }
 
