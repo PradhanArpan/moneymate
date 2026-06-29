@@ -207,7 +207,10 @@ function sortSectionRows(section,rows=[]){
 }
 
 /* ── Utils ───────────────────────────────────────────────────────── */
-const inr    = n=>"₹"+new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Math.round(n||0));
+const numVal = n=>{const v=Number(n);return Number.isFinite(v)?v:0;};
+const amountKey = n=>{const v=numVal(n);const sign=v<0?"-":"";const abs=Math.abs(v);const paise=Math.trunc(abs*100+1e-8);return `${sign}${Math.trunc(paise/100)}.${String(paise%100).padStart(2,"0")}`;};
+const moneyNoRound = n=>{const k=amountKey(n);const sign=k.startsWith("-")?"-":"";const [w,rawF]=(sign?k.slice(1):k).split(".");const whole=new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Number(w)||0);const frac=(rawF||"").replace(/0+$/,"");return sign+whole+(frac?`.${frac}`:"");};
+const inr    = n=>"₹"+moneyNoRound(n);
 const uid    = ()=>Math.random().toString(36).slice(2,9);
 const today  = ()=>new Date().toISOString().slice(0,10);
 const curMo  = ()=>today().slice(0,7);
@@ -620,7 +623,7 @@ function guessPdfPasswordFromName(name=""){
   return "";
 }
 const cleanDescForKey=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,48);
-const importDupKey=(accId,r)=>`${accId}|${r.date}|${(+r.amount).toFixed(2)}|${r.type}|${cleanDescForKey(r.desc||r.note)}`;
+const importDupKey=(accId,r)=>`${accId}|${r.date}|${amountKey(r.amount)}|${r.type}|${cleanDescForKey(r.desc||r.note)}`;
 function rowConfidence(r){
   if(r.duplicate)return {label:"Duplicate",tone:C.muted,bg:C.bg,rank:3};
   if(r.balanceIssue)return {label:"Balance check",tone:C.expense,bg:C.softExpense,rank:2};
@@ -657,13 +660,13 @@ function extractStatementSerials(lines=[]){
   return {found:nums.length,max,missing};
 }
 function skippedLineCandidates(lines=[],rows=[]){
-  const keys=new Set(rows.map(r=>`${r.date}|${(+r.amount||0).toFixed(2)}`));
+  const keys=new Set(rows.map(r=>`${r.date}|${amountKey(r.amount)}`));
   const out=[];
-  for(const line of lines){const dm=line.match(DRE)||line.match(DRE2);if(!dm)continue;const date=toISO(dm[1],dm[2],dm[3]);const amts=(line.match(ARE)||[]).map(a=>parseFloat(a.replace(/,/g,""))).filter(v=>v>0);if(!date||!amts.length)continue;const maybe=amts.length>1?amts[amts.length-2]:amts[0];const k=`${date}|${maybe.toFixed(2)}`;if(!keys.has(k))out.push({line:String(line).slice(0,140),date,amount:maybe,reason:"Could not match to parsed row"});if(out.length>=12)break;}
+  for(const line of lines){const dm=line.match(DRE)||line.match(DRE2);if(!dm)continue;const date=toISO(dm[1],dm[2],dm[3]);const amts=(line.match(ARE)||[]).map(a=>parseFloat(a.replace(/,/g,""))).filter(v=>v>0);if(!date||!amts.length)continue;const maybe=amts.length>1?amts[amts.length-2]:amts[0];const k=`${date}|${amountKey(maybe)}`;if(!keys.has(k))out.push({line:String(line).slice(0,140),date,amount:maybe,reason:"Could not match to parsed row"});if(out.length>=12)break;}
   return out;
 }
 function statementFingerprint(profile={},summary={},fileName=""){
-  return [profile.bank||"unknown",profile.accountLast4||"",profile.period||"",summary.count||0,Math.round(summary.debit||0),Math.round(summary.credit||0),String(fileName||"").replace(/\s+/g,"_").slice(0,32)].join("|");
+  return [profile.bank||"unknown",profile.accountLast4||"",profile.period||"",summary.count||0,amountKey(summary.debit||0),amountKey(summary.credit||0),String(fileName||"").replace(/\s+/g,"_").slice(0,32)].join("|");
 }
 function getStatementFps(){try{return JSON.parse(localStorage.getItem("mm:statementFingerprints")||"[]");}catch{return []}}
 function saveStatementFp(fp){if(!fp)return;const arr=[fp,...getStatementFps().filter(x=>x!==fp)].slice(0,60);localStorage.setItem("mm:statementFingerprints",JSON.stringify(arr));}
