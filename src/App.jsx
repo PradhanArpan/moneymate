@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.2 Recurring Auto-post + EPF Income
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.3 Health Insurance Accounts
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -450,6 +450,30 @@ const HARDCODED_LIC_ACCOUNTS=[
   {id:"lic-596951289",name:"New Money Back Plan - 20 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596951289",hint:"1289",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:15,commencementDate:"2015-09-28",maturityDate:"2035-09-28",nextPayoutDate:"2035-09-28",premiumAmount:3938,premiumFrequency:"halfyearly",premiumDueDay:28,premiumStartDate:"2026-09-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:120,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
   {id:"lic-596600835",name:"New Jeevan Anand",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596600835",hint:"0835",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:20,commencementDate:"2014-07-17",maturityDate:"2034-07-17",nextPayoutDate:"",premiumAmount:5804,premiumFrequency:"yearly",premiumDueDay:17,premiumStartDate:"2026-07-17",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:100,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
 ];
+const HARDCODED_HEALTH_INSURANCE_ACCOUNTS=[
+  {id:"health-hdfcergo-2856205316603901000",name:"HDFC ERGO Optima Secure",type:"Health Insurance",logoKey:"hdfcergo",opening:0,accountNumber:"2856205316603901000",hint:"1000",status:"Active",policyType:"Health Insurance",planType:"my:Optima Secure",lifeInsured:"Arpan Pradhan; Joice Das",nomineeName:"Sudatta Mohanty",sumAssured:2500000,policyTerm:3,premiumPayingTerm:0,commencementDate:"2026-03-19",maturityDate:"2029-03-18",nextPayoutDate:"",premiumAmount:68361,premiumFrequency:"once",premiumDueDay:18,premiumStartDate:"2029-03-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Family Floater; Plus Benefit; Secure Benefit; Automatic Restore; Optima Wellbeing",riderPremium:0,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 20/02/2026; premium paid 20/02/2026; policy period 19/03/2026 to 18/03/2029",policyCategory:"Family Floater",policyUIN:"HDFHLIP25041V062425",premiumReceiptNo:"3822602127753",coverageNotes:"Base health cover ₹25,00,000; Plus Benefit ₹5,00,000; Emergency Air Ambulance up to ₹5,00,000; Preventive Health Check-up floater ₹10,000; insured persons: Arpan Pradhan and Joice Das."},
+  {id:"health-star-11251373949700",name:"Star Health Women Care",type:"Health Insurance",logoKey:"starhealth",opening:0,accountNumber:"11251373949700",hint:"9700",status:"Active",policyType:"Health Insurance",planType:"Star Women Care Insurance Policy",lifeInsured:"Joice Das",nomineeName:"Arpan Pradhan",sumAssured:5000000,policyTerm:2,premiumPayingTerm:0,commencementDate:"2024-11-26",maturityDate:"2026-11-25",nextPayoutDate:"",premiumAmount:39713,premiumFrequency:"once",premiumDueDay:25,premiumStartDate:"2026-11-25",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Individual health cover; Star Women Care Insurance - 2021",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 26/11/2024; premium paid 26/11/2024; policy period 26/11/2024 to 25/11/2026",policyCategory:"Individual",policyUIN:"SHAHLIP23132V022223",premiumReceiptNo:"700016/RV/2025/0176774927/1",coverageNotes:"Sum insured ₹50,00,000; insured person: Joice Das; nominee: Arpan Pradhan; no PED declared; policy type: Star Women Care Insurance - 2021."},
+];
+const mergeAccountDefaults=(account,defaults)=>{
+  const out={...account};
+  Object.entries(defaults).forEach(([k,v])=>{
+    const cur=out[k];
+    const blank=cur===undefined||cur===null||cur==="";
+    const zeroNumber=typeof v==="number"&&v!==0&&(+cur||0)===0;
+    const autoLogo=k==="logoKey"&&(!cur||cur==="auto"||cur==="lic");
+    if(blank||zeroNumber||autoLogo)out[k]=v;
+  });
+  return out;
+};
+function ensureHardcodedHealthInsuranceAccounts(accounts=[]){
+  const out=[...(accounts||[])];
+  HARDCODED_HEALTH_INSURANCE_ACCOUNTS.forEach(p=>{
+    const idx=out.findIndex(a=>String(a.accountNumber||"")===String(p.accountNumber)||String(a.id||"")===String(p.id));
+    if(idx>=0)out[idx]=mergeAccountDefaults(out[idx],p);
+    else out.push({...p});
+  });
+  return out;
+}
 function ensureHardcodedLicAccounts(accounts=[]){
   const existing=new Set((accounts||[]).map(a=>String(a.accountNumber||a.id||"")));
   const out=[...(accounts||[])];
@@ -493,13 +517,13 @@ function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
       endDate:policyPremiumEndDate(p),
       lastDone:"",
       needsSourceAccount:!p.payFromId,
-      note:"LIC policy premium. Select the paying bank account when recording the payment."
+      note:"Insurance policy premium. Select the paying bank account when recording the payment."
     });
   });
   return out;
 }
 
-const DEFAULT_ACCOUNTS=ensureHardcodedLicAccounts([
+const DEFAULT_ACCOUNTS=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts([
   {id:"acc-sib",  name:"South Indian Bank",type:"Bank",  opening:0,hint:"0584"},
   {id:"acc-hdfc", name:"HDFC Bank",         type:"Bank",  opening:0,hint:"9712"},
   {id:"acc-sbi1", name:"SBI – 4034",        type:"Bank",  opening:0,hint:"4034"},
@@ -507,14 +531,14 @@ const DEFAULT_ACCOUNTS=ensureHardcodedLicAccounts([
   {id:"acc-ktk",  name:"Kotak Bank",         type:"Bank",  opening:0,hint:"1924"},
   {id:"acc-loan", name:"SBI Car Loan",       type:"Loan",  loanType:"Car Loan",
    sanctionedAmount:780000,outstandingAmount:576797,opening:0,hint:""},
-]);
+]));
 const DEFAULT_RECURRING=ensureHardcodedLicRecurring([],DEFAULT_ACCOUNTS);
 const EMPTY={
   accounts:DEFAULT_ACCOUNTS,transactions:[],budgets:{},
   goals:[],recurring:DEFAULT_RECURRING,customCats:{expense:[],income:[]},budgetOverrides:{},
 };
 const normalize=d=>{
-  const accounts=ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS);
+  const accounts=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS));
   const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r};return base.type==="expense"||base.type==="income"?{...base,category:mainCategory(base.category),subcategory:base.subcategory||""}:base;});
   return {
     ...EMPTY,...d,
@@ -2079,12 +2103,20 @@ function PolicyDetailsModal({close,account,setModal}){
       {detail("Name of rider",val(account.riderName))}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>{detail("Rider premium",money(account.riderPremium))}{detail("Rider sum assured",money(account.riderSumAssured))}</div>
     </div></>}
-    {(account.bankName||account.linkedBankAccountNumber||account.bankBranch)&&<><div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Bank account details</div><div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+    {(account.bankName||account.linkedBankAccountNumber||account.bankBranch)&&<><div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Bank / policy notes</div><div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>
         {detail("Bank account number",val(account.linkedBankAccountNumber))}
         {detail("Bank name",val(account.bankName))}
-        {detail("Branch",val(account.bankBranch))}
+        {detail("Branch / note",val(account.bankBranch))}
         {detail("Premium reminder",account.premiumDueDay?`Day ${account.premiumDueDay}`:"—")}
+      </div>
+    </div></>}
+    {(account.policyCategory||account.policyUIN||account.premiumReceiptNo||account.coverageNotes)&&<><div style={{fontSize:16,fontWeight:900,margin:"14px 0 8px"}}>Health policy information</div><div style={{border:`1px solid ${C.border}`,borderRadius:18,padding:"8px 16px",background:C.card,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:18}}>
+        {detail("Policy category",val(account.policyCategory))}
+        {detail("UIN",val(account.policyUIN))}
+        {detail("Receipt / invoice",val(account.premiumReceiptNo))}
+        {detail("Coverage notes",val(account.coverageNotes))}
       </div>
     </div></>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -2171,7 +2203,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
       <L>Nominee name</L><input style={F} value={f.nomineeName} onChange={s("nomineeName")} placeholder="Optional"/>
       <L>{isProtection?"Documentation value / surrender value (₹)":"Current / surrender value (₹)"}</L><input style={F} type="number" value={f.opening} onChange={s("opening")} placeholder="0"/>
       <L>Premium amount (₹)</L><input style={F} type="number" value={f.premiumAmount} onChange={s("premiumAmount")} placeholder="e.g. 12500"/>
-      <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option></select>
+      <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option><option value="once">Once / Single</option></select>
       <L>Next / usual premium date</L><input style={F} type="date" value={f.premiumStartDate} onChange={s("premiumStartDate")}/>
       <L>Due day</L><input style={F} type="number" min="1" max="31" value={f.premiumDueDay} onChange={s("premiumDueDay")} placeholder="e.g. 10"/>
       <L>Sum assured / cover (₹)</L><input style={F} type="number" value={f.sumAssured} onChange={s("sumAssured")} placeholder="For term/health cover"/>
@@ -2234,7 +2266,7 @@ function EditAccModal({close,account,editAcc,delAcc}){
       <L>Life insured</L><input style={F} value={f.lifeInsured} onChange={s("lifeInsured")}/>
       <L>Nominee name</L><input style={F} value={f.nomineeName} onChange={s("nomineeName")}/>
       <L>Premium amount (₹)</L><input style={F} type="number" value={f.premiumAmount} onChange={s("premiumAmount")}/>
-      <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option></select>
+      <L>Premium frequency</L><select style={F} value={f.premiumFrequency} onChange={s("premiumFrequency")}><option value="monthly">Monthly</option><option value="halfyearly">Half-yearly</option><option value="yearly">Yearly</option><option value="once">Once / Single</option></select>
       <L>Premium start / next date</L><input style={F} type="date" value={f.premiumStartDate} onChange={s("premiumStartDate")}/>
       <L>Due day</L><input style={F} type="number" min="1" max="31" value={f.premiumDueDay} onChange={s("premiumDueDay")}/>
       <L>Sum assured / cover (₹)</L><input style={F} type="number" value={f.sumAssured} onChange={s("sumAssured")}/>
