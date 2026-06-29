@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v8.7 Investment Accounts Expansion
+   MONEYMATE  ·  Smart Money Tracker  ·  v8.8 Account Section/Width Fix
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -148,12 +148,12 @@ function autoLogoKey(a={}){
 function logoChoice(a={}){const key=a.logoKey&&a.logoKey!=="auto"?a.logoKey:autoLogoKey(a);return LOGO_MAP[key]||LOGO_MAP.auto;}
 function LogoBadge({entity,size=72,tall=false}){
   const l=logoChoice(entity);
-  const width=Math.max(72,Math.round(size*1.18));
-  const minH=tall?Math.max(88,Math.round(size*1.22)):size;
+  const width=tall?Math.round(size*1.10):size;
+  const minH=tall?Math.max(68,Math.round(size*1.12)):size;
   const hasImg=!!l.img;
   if(hasImg){
     return <div style={{width,minHeight:minH,height:tall?"auto":size,borderRadius:18,background:l.bg||"#fff",display:"flex",alignItems:"center",justifyContent:"center",padding:7,flexShrink:0,alignSelf:tall?"stretch":"center",boxShadow:"inset 0 0 0 1px rgba(34,35,56,.08),0 4px 12px rgba(34,35,56,.04)",overflow:"hidden"}}>
-      <img src={l.img} alt={l.label} style={{width:"100%",height:"100%",maxWidth:"100%",maxHeight:tall?72:size-14,objectFit:"contain",display:"block"}}/>
+      <img src={l.img} alt={l.label} style={{width:"100%",height:"100%",maxWidth:"100%",maxHeight:tall?60:size-14,objectFit:"contain",display:"block"}}/>
     </div>;
   }
   const mark=l.mark&&l.mark.length<=4?l.mark:l.icon;
@@ -871,7 +871,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
   if(detail){ setDetail(null); }
-  return(<div style={{...Screen,height:"100dvh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+  return(<div style={{...Screen,height:"100dvh",overflow:"hidden",overflowX:"hidden",maxWidth:"100vw",display:"flex",flexDirection:"column"}}>
     <AccountRibbon netWorth={netWorth} onAdd={()=>setModal("acctpicker")}/>
     <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 28px"}}>
@@ -879,14 +879,14 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
         <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My finances"/>
       </div>
     </div>
-    <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"14px 18px 86px"}}>
+    <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",padding:"12px 12px 86px",maxWidth:"100vw"}}>
       {section==="finance"?(
         <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth}/>
       ):(
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
           <div style={{display:"grid",gap:14}}>
-            <AccountSection title="Savings Account" rows={accountRows.filter(a=>!["Loan","Credit Card","Mutual Fund","Insurance","Goal"].includes(a.type)&&!a._goal)} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Savings Account" rows={accountRows.filter(a=>!a._goal&&BANK_TYPES.includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Credit Cards" rows={accountRows.filter(a=>a.type==="Credit Card")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Debt" rows={accountRows.filter(a=>a.type==="Loan")} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Investment" rows={accountRows.filter(a=>INVEST_TYPES.includes(a.type))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
@@ -901,7 +901,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
 
 function AccountSection({title,rows,render}){
   if(!rows.length)return null;
-  return <div style={{display:"grid",gap:9}}>
+  return <div style={{display:"grid",gap:8,minWidth:0,maxWidth:"100%",overflow:"hidden"}}>
     <div style={{fontSize:13,fontWeight:900,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",padding:"2px 2px"}}>{title}</div>
     {rows.map(render)}
   </div>;
@@ -915,15 +915,15 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
     return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});
   };
   const openEdit=e=>{e.stopPropagation();if(a._goal)return setModal("editgoal",{goal:a._goal});return setModal(a.type==="Loan"?"editloan":a.type==="Credit Card"?"editcc":"editacc",{account:a});};
-  return <div onClick={open} role="button" tabIndex={0} style={{...AccountRow,alignItems:"stretch",cursor:canOpen?"default":"pointer"}}>
-    <LogoBadge entity={a} size={72} tall/>
-    <div style={{flex:1,textAlign:"left",minWidth:0}}>
-      <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
-        <div style={{fontSize:15,fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
-        <div style={{fontSize:14,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0}}>{inr(accountValue(a))}</div>
+  return <div onClick={open} role="button" tabIndex={0} style={{...AccountRow,alignItems:"stretch",cursor:canOpen?"default":"pointer",maxWidth:"100%",overflow:"hidden"}}>
+    <LogoBadge entity={a} size={60} tall/>
+    <div style={{flex:1,textAlign:"left",minWidth:0,overflow:"hidden"}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:6,alignItems:"baseline",minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0,flex:1}}>{a.name}</div>
+        <div style={{fontSize:13,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0,maxWidth:"42%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{inr(accountValue(a))}</div>
       </div>
-      <div style={{fontSize:12.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
-      {lastTxn&&!a._goal&&!(a.type==="Loan")&&<div style={{fontSize:11.5,fontWeight:850,marginTop:4,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
+      <div style={{fontSize:11.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
+      {lastTxn&&!a._goal&&!(a.type==="Loan")&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
       {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button><button onClick={e=>{e.stopPropagation();setModal("paycc",{cc:a});}} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.income,fontWeight:900}}>Pay</button></div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
@@ -1211,8 +1211,8 @@ const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:
 const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
 function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Planned this month</div>{planned.slice(0,5).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1}}><div style={{fontWeight:700}}>{r.name}</div><div style={{fontSize:13,color:r.status.tone}}>{r.status.label}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={TinyPill}>Paid</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
-function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"12px 0 9px",fontSize:16,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap"}}><span style={{marginRight:8}}>{icon}</span>{label}</button>}
-const AccountRow={display:"flex",alignItems:"stretch",gap:12,border:"none",background:"rgba(255,255,255,.34)",padding:"9px 8px",borderRadius:18,cursor:"pointer"};
+function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"11px 0 8px",fontSize:15,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{marginRight:6}}>{icon}</span>{label}</button>}
+const AccountRow={display:"flex",alignItems:"stretch",gap:8,border:"none",background:"rgba(255,255,255,.34)",padding:"8px 6px",borderRadius:18,cursor:"pointer",width:"100%",maxWidth:"100%",overflow:"hidden"};
 const AccountSquare={width:52,height:52,borderRadius:14,display:"grid",placeItems:"center",color:"#fff",fontSize:24,flexShrink:0};
 const AddAccountRow={display:"flex",alignItems:"center",gap:13,border:"none",background:"transparent",padding:"18px 0",cursor:"pointer"};
 const DashedPlus={width:52,height:52,borderRadius:14,border:"2px dashed #C9C7D0",display:"grid",placeItems:"center",fontSize:27,color:C.muted,background:"#FAFAFD"};
