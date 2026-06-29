@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.3 Health Insurance Accounts
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.4 Insurance Premium Schedule
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -489,36 +489,84 @@ function policyPremiumEndDate(p){
   d.setFullYear(d.getFullYear()+yrs);
   return ymd(d);
 }
+function insurancePremiumRecurringFromPolicy(p){
+  const protection=["Term Insurance","Health Insurance"].includes(p.type);
+  const startDate=p.premiumStartDate||p.nextPremiumDate||p.maturityDate||today();
+  const frequency=p.premiumFrequency||"yearly";
+  const dueDay=+p.premiumDueDay||+String(startDate).slice(8,10)||1;
+  const name=`${p.name} premium`;
+  return {
+    id:`rec-${p.id||String(p.accountNumber||"").replace(/\W+/g,"")||uid()}`,
+    name,
+    type:protection?"expense":"transfer",
+    amount:+p.premiumAmount||0,
+    category:protection?"Health":"Transfer",
+    subcategory:protection?"Insurance Premium":"",
+    accountId:p.payFromId||"",
+    toAccountId:protection?undefined:p.id,
+    linkedAccountId:p.id,
+    sourcePolicyId:p.id,
+    policyNumber:p.accountNumber||"",
+    day:dueDay,
+    frequency,
+    startDate,
+    endDate:frequency==="once"?startDate:policyPremiumEndDate(p),
+    lastDone:"",
+    lastDoneDate:"",
+    skipDates:[],
+    needsSourceAccount:!p.payFromId,
+    autoPostOnDue:true,
+    plannedOnlyBeforeDue:true,
+    note:"Insurance policy premium. Future occurrences stay grey/scheduled and do not affect balances until the due date. Select the paying bank account when recording/payment is due."
+  };
+}
+function isSamePolicyRecurring(r,p){
+  const pid=String(p.id||""), pno=String(p.accountNumber||"");
+  if(!r||!p)return false;
+  if(pid&&(String(r.sourcePolicyId||"")===pid||String(r.linkedAccountId||"")===pid||String(r.toAccountId||"")===pid))return true;
+  if(pno&&(String(r.policyNumber||"")===pno||String(r.name||"").includes(pno)))return true;
+  const rn=String(r.name||"").trim().toLowerCase(), pn=String(p.name||"").trim().toLowerCase();
+  return !!pn && rn===`${pn} premium`;
+}
+function mergePolicyRecurring(existing,canonical){
+  return {
+    ...existing,
+    name:existing.name||canonical.name,
+    type:canonical.type,
+    amount:canonical.amount,
+    category:canonical.category,
+    subcategory:canonical.subcategory,
+    accountId:existing.accountId||canonical.accountId||"",
+    toAccountId:canonical.toAccountId,
+    linkedAccountId:canonical.linkedAccountId,
+    sourcePolicyId:canonical.sourcePolicyId,
+    policyNumber:canonical.policyNumber,
+    day:canonical.day,
+    frequency:canonical.frequency,
+    startDate:canonical.startDate,
+    endDate:canonical.endDate,
+    skipDates:existing.skipDates||[],
+    autoPostOnDue:true,
+    plannedOnlyBeforeDue:true,
+    needsSourceAccount:!(existing.accountId||canonical.accountId),
+    note:existing.note||canonical.note
+  };
+}
 function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
-  const accs=accounts?.length?accounts:HARDCODED_LIC_ACCOUNTS;
-  const existing=new Set((recurring||[]).map(r=>String(r.sourcePolicyId||r.linkedAccountId||r.toAccountId||"")+"|"+String(r.name||"")));
-  const out=[...(recurring||[])];
-  accs.filter(isInsuranceAccount).forEach(p=>{
-    if(!p.premiumAmount||!p.premiumStartDate)return;
-    const sourceKey=String(p.id||p.accountNumber||"")+"|"+String(`${p.name} premium`);
-    const already=(out||[]).some(r=>r.sourcePolicyId===p.id||r.linkedAccountId===p.id||r.toAccountId===p.id||(String(r.name||"").includes(p.accountNumber||"__never__")&&String(r.name||"").toLowerCase().includes("premium")));
-    if(already||existing.has(sourceKey))return;
-    const protection=["Term Insurance","Health Insurance"].includes(p.type);
-    out.push({
-      id:`rec-${p.id||uid()}`,
-      name:`${p.name} premium`,
-      type:protection?"expense":"transfer",
-      amount:+p.premiumAmount||0,
-      category:protection?"Health":"Transfer",
-      subcategory:protection?"Insurance Premium":"",
-      accountId:p.payFromId||"",
-      toAccountId:protection?undefined:p.id,
-      linkedAccountId:p.id,
-      sourcePolicyId:p.id,
-      policyNumber:p.accountNumber||"",
-      day:+p.premiumDueDay||+String(p.premiumStartDate).slice(8,10)||1,
-      frequency:p.premiumFrequency||"yearly",
-      startDate:p.premiumStartDate,
-      endDate:policyPremiumEndDate(p),
-      lastDone:"",
-      needsSourceAccount:!p.payFromId,
-      note:"Insurance policy premium. Select the paying bank account when recording the payment."
-    });
+  const accs=accounts?.length?accounts:HARDCODED_LIC_ACCOUNTS.concat(HARDCODED_HEALTH_INSURANCE_ACCOUNTS);
+  let out=[...(recurring||[])];
+  accs.filter(isInsuranceAccount).filter(p=>p.premiumAmount&&p.premiumStartDate).forEach(p=>{
+    const canonical=insurancePremiumRecurringFromPolicy(p);
+    const matches=[];
+    out.forEach((r,i)=>{if(isSamePolicyRecurring(r,p))matches.push(i);});
+    if(matches.length){
+      const keep=matches[0];
+      out[keep]=mergePolicyRecurring(out[keep],canonical);
+      const drop=new Set(matches.slice(1));
+      out=out.filter((_,i)=>!drop.has(i));
+    }else{
+      out.push(canonical);
+    }
   });
   return out;
 }
@@ -1703,7 +1751,7 @@ const PlainSmall={border:"none",background:"transparent",color:C.muted,fontSize:
 const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:"11px 10px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer"};
 const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
-function PlannedLite({planned,markPaid,delRec,setModal}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Upcoming recurring payments</div>{planned.slice(0,8).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:r.status.tone}}>{r.status.label}{!r.accountId?" · choose bank when paying":""}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={{...TinyPill,opacity:r.accountId?1:.68}}>{r.accountId?"Paid":"Reminder"}</button>}<button onClick={()=>setModal?setModal("editrec",{rec:r,due:r.status?.due||nextRecurringDueDate(r)||today()}):delRec(r.id)} style={PlainSmall}>Edit</button></div>)}</div>}
+function PlannedLite({planned,markPaid,delRec,setModal}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Upcoming recurring payments</div>{planned.slice(0,8).map(r=>{const future=(r.status?.diff||0)>0;return <div key={r.id} style={{...ListLine,opacity:future?0.72:1,background:future?"#F3F1F8":"transparent",borderRadius:14,padding:"8px 6px"}}><CatIcon name={r.category}/><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:r.status.tone}}>{future?"Scheduled · ":""}{r.status.label}{!r.accountId?" · choose bank when paying":""}</div></div><div style={{fontWeight:800,color:future?C.muted:(r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense)}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={{...TinyPill,opacity:r.accountId?1:.68}}>{r.accountId?"Paid":"Reminder"}</button>}<button onClick={()=>setModal?setModal("editrec",{rec:r,due:r.status?.due||nextRecurringDueDate(r)||today()}):delRec(r.id)} style={PlainSmall}>Edit</button></div>})}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"11px 0 8px",fontSize:15,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{marginRight:6}}>{icon}</span>{label}</button>}
 const AccountRow={display:"flex",alignItems:"stretch",gap:8,border:"none",background:"rgba(255,255,255,.34)",padding:"8px 6px",borderRadius:18,cursor:"pointer",width:"100%",maxWidth:"100%",overflow:"hidden"};
 const AccountSquare={width:52,height:52,borderRadius:14,display:"grid",placeItems:"center",color:"#fff",fontSize:24,flexShrink:0};
