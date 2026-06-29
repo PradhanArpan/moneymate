@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.7 Recurring Paid Button
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.8 UI + PWA + Recurring Fixes
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -31,8 +31,8 @@ const EXPENSE_STRUCTURE = [
   {name:"Food", emoji:"🍽️", subs:["Restaurant","Tea / Coffee","Snacks","Online Food","Office / College Food"]},
   {name:"Groceries", emoji:"🛒", subs:["Monthly Groceries","Vegetables / Fruits","Milk / Dairy","Household Supplies"]},
   {name:"Transport", emoji:"🚗", subs:["Fuel","Taxi / Auto","Bus / Metro / Train","Parking / Toll","Vehicle Service"]},
-  {name:"Home", emoji:"🏠", subs:["Rent","Maintenance","Electricity","Water","Gas","Internet","Mobile Recharge"]},
-  {name:"Family", emoji:"👨‍👩‍👧", subs:["Parents","Children","Spouse","Family Support","Domestic Help"]},
+  {name:"Home", emoji:"🏠", subs:["Rent","Maintenance","Electricity","Water","Gas","Internet","Mobile Recharge","Domestic Help"]},
+  {name:"Family", emoji:"👨‍👩‍👧", subs:["Parents","Children","Spouse","Family Support"]},
   {name:"Health", emoji:"💊", subs:["Medicine","Doctor","Lab Test","Hospital","Insurance Premium"]},
   {name:"Education", emoji:"📚", subs:["School / College Fee","Books","Course","Exam Fee","Training"]},
   {name:"Shopping", emoji:"🛍️", subs:["Clothes","Footwear","Electronics","Personal Items","Online Shopping"]},
@@ -64,6 +64,7 @@ const INCOME_CATS   = INCOME_STRUCTURE.map(c=>c.name);
 const SUBCATEGORY_MAP = Object.fromEntries([...EXPENSE_STRUCTURE,...INCOME_STRUCTURE,...TRANSFER_STRUCTURE].map(c=>[c.name,c.subs]));
 const CATEGORY_ALIASES = {
   Rent:"Home",Utilities:"Home",Bills:"Home",Mobile:"Home",Internet:"Home",
+  "Domestic Help":"Home",
   Entertainment:"Leisure",Travel:"Leisure",Subscription:"Leisure",
   EMI:"EMI/ Loan",Loan:"EMI/ Loan",
   Giving:"Tithe",Charity:"Tithe",Gift:"Tithe",Gifts:"Tithe",
@@ -540,7 +541,7 @@ function isSamePolicyRecurring(r,p){
   return !!pn && rn===`${pn} premium`;
 }
 function mergePolicyRecurring(existing,canonical){
-  const deletedFuture=existing.userEndDate||((existing.endDate||"")&&canonical.endDate&&(existing.endDate<canonical.endDate));
+  const deletedFuture=existing.disabledByUser||existing.disabled===true||existing.splitFuture===true;
   return {
     ...existing,
     name:existing.name||canonical.name,
@@ -557,7 +558,9 @@ function mergePolicyRecurring(existing,canonical){
     frequency:canonical.frequency,
     startDate:canonical.startDate,
     endDate:deletedFuture?existing.endDate:canonical.endDate,
-    userEndDate:deletedFuture?true:existing.userEndDate,
+    userEndDate:deletedFuture?true:false,
+    disabled:deletedFuture?true:false,
+    disabledByUser:deletedFuture?true:false,
     skipDates:existing.skipDates||[],
     lastDone:"",
     lastDoneDate:"",
@@ -604,8 +607,13 @@ const EMPTY={
 };
 const normalize=d=>{
   const accounts=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS));
-  const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r,lastDone:"",lastDoneDate:"",autoPostOnDue:false,manualOnly:true};return base.type==="expense"||base.type==="income"?{...base,category:mainCategory(base.category),subcategory:base.subcategory||""}:base;});
-  const cleanedTransactions=(d.transactions||[]).filter(t=>!(t.recurringId||t.recurringDate||t.source==="recurring-auto")).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t);
+  const normalizeCatSub=t=>{
+    const sub=t.subcategory||"";
+    const movedDomestic=String(sub).toLowerCase()==="domestic help";
+    return {...t,category:movedDomestic?"Home":mainCategory(t.category),subcategory:sub};
+  };
+  const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r,lastDone:"",lastDoneDate:"",autoPostOnDue:false,manualOnly:true};return base.type==="expense"||base.type==="income"?normalizeCatSub(base):base;});
+  const cleanedTransactions=(d.transactions||[]).filter(t=>!(t.recurringId||t.recurringDate||t.source==="recurring-auto")).map(t=>t.type==="expense"||t.type==="income"?normalizeCatSub(t):t);
   return {
     ...EMPTY,...d,
     accounts,
@@ -1082,11 +1090,11 @@ function Main({data,persist,pin}){
   const addRec  =r=>persist({...data,recurring:[...data.recurring,{...r,id:uid(),lastDone:"",lastDoneDate:"",skipDates:r.skipDates||[],autoPostOnDue:false,manualOnly:true}]});
   const delRec  =id=>persist({...data,recurring:data.recurring.filter(r=>r.id!==id)});
   const skipRecOccurrence=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])]}:r)});
-  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due),userEndDate:true,lastDone:"",lastDoneDate:""}:r)});
+  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due),userEndDate:true,disabled:!!r.sourcePolicyId,disabledByUser:!!r.sourcePolicyId,lastDone:"",lastDoneDate:""}:r)});
   const editRecOccurrence=(rec,due,ch,scope)=>{
     if(scope==="future"){
       const newRec={...rec,...ch,id:uid(),startDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceSplitFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
-      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due),userEndDate:true,lastDone:"",lastDoneDate:""}:r).concat(newRec)});
+      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due),userEndDate:true,splitFuture:true,lastDone:"",lastDoneDate:""}:r).concat(newRec)});
     }else{
       const one={...rec,...ch,id:uid(),frequency:"once",startDate:due,endDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceOneOffFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
       persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])],lastDone:"",lastDoneDate:""}:r).concat(one)});
@@ -1142,6 +1150,7 @@ function Main({data,persist,pin}){
     return b;
   },[data]);
   const netWorth=data.accounts.reduce((s,a)=>s+netWorthAccountValue(a,balances[a.id]||0),0);
+  const liquidNetWorth=liquidHeaderValue(data,balances);
   const ccDueAlerts=useMemo(()=>{const todayNum=new Date().getDate();return data.accounts.filter(a=>a.type==="Credit Card"&&a.dueDay).map(a=>{const due=a.dueDay,diff=due>=todayNum?due-todayNum:30-todayNum+due;return diff<=7?{...a,daysLeft:diff}:null;}).filter(Boolean);},[data]);
   const backupReminder=daysSinceBackup()>30;
   // Recurring items are reminders only. They are never auto-posted as paid transactions.
@@ -1153,14 +1162,14 @@ function Main({data,persist,pin}){
     {id:"budgets",Icon:Target,label:"Budget"},
     {id:"home",Icon:TrendingUp,label:"Overview"},
   ];
-  const shared={data,balances,netWorth,expCats,incCats,bankAccounts,cashAccount,ccDueAlerts,backupReminder,
+  const shared={data,balances,netWorth,liquidNetWorth,expCats,incCats,bankAccounts,cashAccount,ccDueAlerts,backupReminder,
     addTxn,addTxns,delTxn,editTxn,addAcc,delAcc,editAcc,editLoan,editCC,payLoan,
     addGoal,delGoal,editGoal,setBudget,delBudget,addCat,addRec,delRec,skipRecOccurrence,deleteRecFuture,editRecOccurrence,payRecurringOccurrence,markPaid,
     importBatch,restoreData,exportCSV,setModal:M};
 
   return(
     <div style={{height:"100dvh",maxHeight:"100dvh",overflow:"hidden",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.ink}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:#F7F4FF;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid #E5E1F3;} .budget-carousel::-webkit-scrollbar{display:none;} .budget-track{display:flex;gap:8px;width:max-content;animation:mmBudgetSlide 34s linear infinite;padding:10px 14px 12px;} .budget-carousel:active .budget-track{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:#F7F4FF;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow:hidden;border-bottom:1px solid #E5E1F3;position:relative;} .budget-track{display:flex;gap:8px;width:max-content;padding:10px 14px 12px;} .budget-track.marquee{animation:mmBudgetSlide 34s linear infinite;} .budget-carousel:active .budget-track.marquee{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track.marquee{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
       <div style={{height:"100%",overflow:"hidden"}}>
         {tab==="home"    &&<HomeTab    {...shared}/>} 
         {tab==="entries" &&<EntriesTab {...shared}/>} 
@@ -1203,7 +1212,7 @@ function Main({data,persist,pin}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    OVERVIEW TAB — 1Money-style summary
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
+function HomeTab({data,balances,netWorth,liquidNetWorth,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=periodTxns(data.transactions,period);
   const month=period.kind==="month"?period.month:curMo();
@@ -1233,7 +1242,7 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
     return out;
   },[data,period,month]);
   return(<div style={FixedScreen}>
-    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
+    <MoneyHeader netWorth={liquidNetWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
     <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         <SoftBalance label="Starting balance" value={inr(netWorth-savings)}/>
@@ -1286,7 +1295,7 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CATEGORIES TAB — close to 1Money/Monefy-style wheel
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function CategoriesTab({data,expCats,setModal,netWorth}){
+function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=periodTxns(data.transactions,period);
   const rows=categoryRows(txns,expCats);
@@ -1299,8 +1308,8 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
   const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name),fillColor:pieColorMap[mainCategory(r.name)]||C.charts[(visible.findIndex(v=>mainCategory(v.name)===mainCategory(r.name))+C.charts.length)%C.charts.length]});
   const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",overflowY:"hidden",overscrollBehavior:"none",paddingBottom:58}}>
-    <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setModal("addcat")} style={HeaderIconBtn}><Plus size={26}/></button>}/>
-    <div style={{height:"calc(100dvh - 154px)",minHeight:0,overflow:"hidden",padding:"4px 7px 0",display:"flex",flexDirection:"column",touchAction:"manipulation"}}>
+    <MoneyHeader netWorth={liquidNetWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<span/>}/>
+    <div style={{height:"calc(100dvh - 210px)",minHeight:0,overflow:"hidden",padding:"4px 7px 0",display:"flex",flexDirection:"column",touchAction:"manipulation"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:1,alignItems:"start",height:70,flexShrink:0}}>
         {top.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
       </div>
@@ -1317,14 +1326,16 @@ function CategoriesTab({data,expCats,setModal,netWorth}){
         {bottom.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i+8} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
       </div>
     </div>
-    <FloatingAdd onClick={()=>setModal("txn",{entryType:"expense"})}/>
+    <CategoryActionFooter setModal={setModal}/>
   </div>);
 }
 
-function savingsTxnAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type));}
+function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Credit Card");}
+function liquidHeaderValue(data,balances={}){return liquidHeaderAccounts(data).reduce((s,a)=>s+(+balances[a.id]||0),0);}
+function savingsTxnAccounts(data){return liquidHeaderAccounts(data);}
 function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id));}
-function txnAccountOptions(data){return [{id:"all",name:"All Savings Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Savings Account"}))];}
-function txnAccountLabel(data,id){if(!id||id==="all")return "All Savings Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
+function txnAccountOptions(data){return [{id:"all",name:"Savings Accounts + Credit Cards"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
+function txnAccountLabel(data,id){if(!id||id==="all")return "Savings Accounts + Credit Cards";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
 function expenseDebitAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Loan"||a.type==="Credit Card");}
 function incomeCreditAccounts(data){return (data.accounts||[]).filter(a=>a.type!=="Loan"&&a.type!=="Credit Card"&&a.type!=="Goal");}
 function entryAccountOptions(data,tp){
@@ -1340,7 +1351,7 @@ function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TRANSACTIONS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,payRecurringOccurrence}){
+function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,liquidNetWorth,payRecurringOccurrence}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const[search,setSearch]=useState("");
   const[accountFilter,setAccountFilter]=useState("all");
@@ -1354,7 +1365,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,pa
   const startBal=endingBal-realPeriodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter,data),0);
   return(<div style={FixedScreen}>
     <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
-    <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
+    <div style={{...ScrollPane,padding:"16px 18px calc(160px + env(safe-area-inset-bottom))"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
         <SoftBalance label="Starting balance" value={inr(startBal)}/>
@@ -1372,9 +1383,8 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,pa
         {t._planned&&rec?<button onClick={()=>rec.accountId&&payRecurringOccurrence?payRecurringOccurrence(rec,t.date):setModal("editrec",{rec,due:t.date})} style={TxnPaidSmall}>Paid</button>:<span/>}
         <button onClick={()=>t._planned&&rec?setModal("editrec",{rec,due:t.date}):setModal("edittxn",{txn:t})} style={TxnEditSmall}>Edit</button>
       </div>})}</div>}
-      <div style={{display:"flex",gap:10,marginTop:14}}><button onClick={()=>setModal("import")} style={SoftBtn}>Import PDF</button>{data.transactions.length>0&&<button onClick={exportCSV} style={SoftBtn}>Export CSV</button>}</div>
     </div>
-    <FloatingAdd onClick={()=>setModal("txn")}/>
+    <TransactionActionFooter setModal={setModal} exportCSV={exportCSV} canExport={data.transactions.length>0}/>
   </div>);
 }
 
@@ -1570,7 +1580,7 @@ function GoalFuelMeter({goal}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    BUDGET TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
+function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,expCats}){
   const[month,setMonth]=useState(curMo());
   const txns=data.transactions.filter(t=>mkKey(t.date)===month);
   const exp=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
@@ -1584,7 +1594,7 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
     return pa.cat.localeCompare(pb.cat)||pa.sub.localeCompare(pb.sub);
   });
   return(<div style={FixedScreen}>
-    <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
+    <MoneyHeader netWorth={liquidNetWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{...ScrollPane,padding:"0 0 calc(86px + env(safe-area-inset-bottom))"}}>
       <BudgetBand title="Expenses" sub={`spent ${inr(exp)}`} amount={inr(exp)} budget={`budgeted ${inr(totalBudget)}`} color="#F7D7E8"/>
       <BudgetCategoryCarousel rows={rows} onBudget={(r)=>r?.key?setModal("budget",{month,key:r.key,amount:r.budget,scope:(data.budgetOverrides||{})[month]?.[r.key]!==undefined?"thisMonth":"repeat"}):setModal("budget",{month})}/>
@@ -1611,10 +1621,13 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
 const Screen={height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:C.bg,paddingBottom:"calc(66px + env(safe-area-inset-bottom))",overflowX:"hidden",overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"};
 const FixedScreen={height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:C.bg,overflow:"hidden",overflowX:"hidden",display:"flex",flexDirection:"column",overscrollBehavior:"none"};
 const ScrollPane={flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",paddingBottom:"calc(86px + env(safe-area-inset-bottom))"};
+const FooterBar={position:"fixed",left:0,right:0,bottom:"calc(58px + env(safe-area-inset-bottom))",zIndex:18,background:"rgba(247,244,255,.96)",backdropFilter:"blur(14px)",borderTop:`1px solid ${C.border}`,padding:"9px 14px 10px",boxShadow:"0 -5px 18px rgba(33,31,58,.08)"};
+const FooterActionBtn={border:"none",borderRadius:14,color:"#fff",fontWeight:950,fontSize:13,padding:"11px 8px",boxShadow:"0 8px 18px rgba(33,31,58,.12)",cursor:"pointer"};
+const FooterSecondaryBtn={border:`1px solid ${C.border}`,background:C.card,borderRadius:13,color:C.ink,fontWeight:900,fontSize:12,padding:"10px 8px",boxShadow:"0 4px 12px rgba(33,31,58,.05)",cursor:"pointer"};
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
-function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="All Accounts",onAccountClick}){
+function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="Savings Accounts + Credit Cards",onAccountClick}){
   const p=period||{kind:"month",month:month||curMo()};
   const hasPeriod=!!(period||month);
   const shift=dir=>setPeriod?setPeriod(shiftPeriod(p,dir)):setMonth&&setMonth(dir>0?nextMo(month):prevMo(month));
@@ -1638,6 +1651,24 @@ function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodMod
     </div>}
   </div>)
 }
+function CategoryActionFooter({setModal}){return <div style={FooterBar}>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+    <button onClick={()=>setModal("txn",{entryType:"income"})} style={{...FooterActionBtn,background:C.income}}>Income</button>
+    <button onClick={()=>setModal("txn",{entryType:"transfer"})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
+    <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
+  </div>
+</div>}
+function TransactionActionFooter({setModal,exportCSV,canExport}){return <div style={FooterBar}>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+    <button onClick={()=>setModal("txn",{entryType:"income"})} style={{...FooterActionBtn,background:C.income}}>Income</button>
+    <button onClick={()=>setModal("txn",{entryType:"transfer"})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
+    <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:canExport?"1fr 1fr":"1fr",gap:8}}>
+    <button onClick={()=>setModal("import")} style={FooterSecondaryBtn}>Import PDF</button>
+    {canExport&&<button onClick={exportCSV} style={FooterSecondaryBtn}>Export CSV</button>}
+  </div>
+</div>}
 function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",top:0,zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
   <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
     <HeaderAvatar/>
@@ -1753,10 +1784,12 @@ function BudgetFillBubble({row,index=0,onClick}){
   </button>;
 }
 function BudgetCategoryCarousel({rows=[],onBudget}){
-  const items=rows.filter(r=>(+r.budget||0)>0);
+  const seen=new Set();
+  const items=rows.filter(r=>(+r.budget||0)>0).filter(r=>{const k=r.key||r.name;if(seen.has(k))return false;seen.add(k);return true;});
   if(!items.length)return <div style={{padding:"10px 18px 12px",fontSize:12,color:C.muted,fontWeight:750}}>No category budgets yet. Tap + to add one.</div>;
-  const doubled=[...items,...items];
-  return <div className="budget-carousel"><div className="budget-track">{doubled.map((r,i)=><BudgetFillBubble key={`${r.key||r.name}-${i}`} row={r} index={i} onClick={()=>onBudget&&onBudget(r)}/>)}</div></div>;
+  const scroll=items.length>4;
+  const display=scroll?[...items,...items]:items;
+  return <div className="budget-carousel"><div className={`budget-track ${scroll?"marquee":""}`}>{display.map((r,i)=><BudgetFillBubble key={`${r.key||r.name}-${i}`} row={r} index={i} onClick={()=>onBudget&&onBudget(r)}/>)}</div></div>;
 }
 
 function SpendingDonut({data,expense,income,period}){
@@ -2472,7 +2505,7 @@ function GoalModal({close,addGoal,bankAccounts,accounts=[]}){
   const[lt,setLt]=useState("none"), [accId,setAccId]=useState(bankAccounts[0]?.id||"");
   const[iType,setIType]=useState(INVEST_TYPES[0]), [iVal,setIVal]=useState(""), [saved,setSaved]=useState("");
   const[logoKey,setLogoKey]=useState("goal");
-  const selectable=accounts.filter(a=>!["Loan","Credit Card","Term Insurance","Health Insurance"].includes(a.type));
+  const selectable=accounts.filter(a=>BANK_TYPES.includes(a.type)||INVEST_TYPES.includes(a.type));
   const defaultMulti=selectable.filter(a=>["Mutual Fund","Stocks"].includes(a.type)).map(a=>a.id);
   const[multiIds,setMultiIds]=useState(defaultMulti);
   const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
@@ -2496,7 +2529,7 @@ function GoalModal({close,addGoal,bankAccounts,accounts=[]}){
 
 function EditGoalModal({close,goal,editGoal,delGoal,accounts=[],balances={}}){
   const[name,setName]=useState(goal.name), [target,setTarget]=useState(goal.target), [iVal,setIVal]=useState(goal.investmentValue||""), [targetDate,setTargetDate]=useState(goal.targetDate||""), [logoKey,setLogoKey]=useState(goal.logoKey||"goal");
-  const selectable=accounts.filter(a=>!["Loan","Credit Card","Term Insurance","Health Insurance"].includes(a.type));
+  const selectable=accounts.filter(a=>BANK_TYPES.includes(a.type)||INVEST_TYPES.includes(a.type));
   const[multiIds,setMultiIds]=useState(goalLinkedIds(goal));
   const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
   if(goal.linkType==="investment")return(<Sheet close={close} title="Update Value"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><div style={{textAlign:"center",marginBottom:18}}><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:700,color:C.gold}}>{inr(goal.investmentValue||0)}</div><div style={{fontSize:12,color:C.muted}}>{goal.investmentType}</div></div><L>New value (₹)</L><input autoFocus style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)}/><button onClick={()=>{if(!iVal)return;editGoal(goal.id,{investmentValue:+iVal,investmentValueDate:today(),logoKey});close();}} style={SB}>Update</button>{delGoal&&<button onClick={()=>{if(window.confirm("Delete this goal?")){delGoal(goal.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete goal</button>}</Sheet>);
@@ -2553,7 +2586,7 @@ function SettingsModal({close,data,pin,restoreData}){
     <div style={{background:C.bg,borderRadius:14,padding:16,marginBottom:12}}>
       <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>💾 Backup</div>
       <div style={{fontSize:12,color:C.muted,marginBottom:10}}>{lb?`Last backup: ${daysAgo===0?"today":daysAgo===1?"yesterday":`${daysAgo} days ago`}`:"Never backed up"}</div>
-      <p style={{fontSize:12,color:C.muted,marginBottom:12}}>Downloads an encrypted .mmbackup file. Safe to save in Google Drive, email to yourself, or WhatsApp. Only you can open it with your PIN.</p>
+      <p style={{fontSize:12,color:C.muted,marginBottom:12}}>Downloads an encrypted .mmbackup file with accounts, goals, insurance details, budgets, recurring schedules, transactions, categories and settings. Safe to save in Google Drive, email to yourself, or WhatsApp. Only you can open it with your PIN.</p>
       <button onClick={async()=>{await exportBackup(data,pin);}} style={SB}>Export full backup (.mmbackup)</button>
     </div>
 
