@@ -411,22 +411,9 @@ const recurringState=r=>{
   return {key:"later",label:`${fmtShortDate(due)} · ${policyFrequencyLabel(r.frequency)}`,tone:C.muted,bg:C.bg,rank:3,due,diff};
 };
 function materializeDueRecurring(data){
-  const txns=[...(data.transactions||[])];
-  let changed=false;
-  const todayStr=today();
-  const recurring=(data.recurring||[]).map(r=>{
-    if(!r||r.disabled||!r.accountId)return r;
-    const range={start:r.startDate||todayStr,end:todayStr};
-    const occ=recurringOccurrencesInRange([r],range,txns).filter(o=>o.date<=todayStr);
-    let last=r.lastDone||r.lastDoneDate||"";
-    occ.forEach(o=>{
-      if(recurringTxnExists(txns,r,o.date))return;
-      const clean={...o,id:uid(),_planned:undefined};
-      txns.push(clean);changed=true;if(o.date>last)last=o.date;
-    });
-    return last&&last!==(r.lastDone||r.lastDoneDate)?{...r,lastDone:last,lastDoneDate:last}:r;
-  });
-  return changed?{...data,transactions:txns,recurring}:data;
+  // Recurring entries are reminders only. They must never become paid/real
+  // transactions automatically; the user records them using the Paid button.
+  return data;
 }
 const lastBackupLabel=()=>{const d=daysSinceBackup();if(d>=999)return "Never backed up";if(d===0)return "Backed up today";if(d===1)return "Backed up yesterday";return `Last backup: ${d} days ago`;};
 
@@ -540,8 +527,14 @@ function isSamePolicyRecurring(r,p){
   const rn=String(r.name||"").trim().toLowerCase(), pn=String(p.name||"").trim().toLowerCase();
   return !!pn && rn===`${pn} premium`;
 }
-function mergePolicyRecurring(existing,canonical){
-  const deletedFuture=existing.disabledByUser||existing.disabled===true||existing.splitFuture===true;
+function mergePolicyRecurring(existing,canonical,{hasFutureReplacement=false}={}){
+  // v11.0: earlier versions could accidentally preserve disabled/split/endDate flags
+  // for hardcoded policy schedules. That hid valid February reminders such as
+  // LIC Jeevan Labh + HDFC Life Sanchay Plus. Reset old policy schedules unless
+  // the user deletes/splits them again in this version.
+  const preserveDelete=existing.disabledByUser===true&&existing.policyDeleteVersion==="v11";
+  const preserveSplit=existing.splitFuture===true&&existing.splitVersion==="v11"&&hasFutureReplacement;
+  const preserveEnd=preserveDelete||preserveSplit;
   return {
     ...existing,
     name:existing.name||canonical.name,
@@ -557,11 +550,14 @@ function mergePolicyRecurring(existing,canonical){
     day:canonical.day,
     frequency:canonical.frequency,
     startDate:canonical.startDate,
-    endDate:deletedFuture?existing.endDate:canonical.endDate,
-    userEndDate:deletedFuture?true:false,
-    disabled:deletedFuture?true:false,
-    disabledByUser:deletedFuture?true:false,
-    skipDates:existing.skipDates||[],
+    endDate:preserveEnd?existing.endDate:canonical.endDate,
+    userEndDate:preserveEnd?true:false,
+    disabled:preserveDelete?true:false,
+    disabledByUser:preserveDelete?true:false,
+    splitFuture:preserveSplit?true:false,
+    splitVersion:preserveSplit?"v11":undefined,
+    policyDeleteVersion:preserveDelete?"v11":undefined,
+    skipDates:preserveDelete?existing.skipDates||[]:[],
     lastDone:"",
     lastDoneDate:"",
     autoPostOnDue:false,
@@ -581,7 +577,9 @@ function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
     out.forEach((r,i)=>{if(isSamePolicyRecurring(r,p))matches.push(i);});
     if(matches.length){
       const keep=matches[0];
-      out[keep]=mergePolicyRecurring(out[keep],canonical);
+      const existing=out[keep];
+      const hasFutureReplacement=out.some(r=>r&&r.userManaged&&(String(r.sourceSplitFrom||"")===String(existing.id||"")||String(r.sourcePolicyId||"")===String(p.id||"")||String(r.policyNumber||"")===String(p.accountNumber||"")));
+      out[keep]=mergePolicyRecurring(existing,canonical,{hasFutureReplacement});
       const drop=new Set(matches.slice(1));
       out=out.filter((_,i)=>!drop.has(i));
     }else{
@@ -1090,11 +1088,11 @@ function Main({data,persist,pin}){
   const addRec  =r=>persist({...data,recurring:[...data.recurring,{...r,id:uid(),lastDone:"",lastDoneDate:"",skipDates:r.skipDates||[],autoPostOnDue:false,manualOnly:true}]});
   const delRec  =id=>persist({...data,recurring:data.recurring.filter(r=>r.id!==id)});
   const skipRecOccurrence=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])]}:r)});
-  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due),userEndDate:true,disabled:!!r.sourcePolicyId,disabledByUser:!!r.sourcePolicyId,lastDone:"",lastDoneDate:""}:r)});
+  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due),userEndDate:true,disabled:!!r.sourcePolicyId,disabledByUser:!!r.sourcePolicyId,policyDeleteVersion:r.sourcePolicyId?"v11":undefined,lastDone:"",lastDoneDate:""}:r)});
   const editRecOccurrence=(rec,due,ch,scope)=>{
     if(scope==="future"){
       const newRec={...rec,...ch,id:uid(),startDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceSplitFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
-      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due),userEndDate:true,splitFuture:true,lastDone:"",lastDoneDate:""}:r).concat(newRec)});
+      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due),userEndDate:true,splitFuture:true,splitVersion:"v11",lastDone:"",lastDoneDate:""}:r).concat(newRec)});
     }else{
       const one={...rec,...ch,id:uid(),frequency:"once",startDate:due,endDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceOneOffFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
       persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])],lastDone:"",lastDoneDate:""}:r).concat(one)});
