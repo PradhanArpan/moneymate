@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.5 Accounts Insurance Finance
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.7 Finance + Insurance Sections
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -71,8 +71,9 @@ const CATEGORY_ALIASES = {
 const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings"];
 const CC_TYPES      = ["Visa","Mastercard","Amex","RuPay","HDFC CC","SBI CC","ICICI CC","Axis CC","Other CC"];
 const LOAN_TYPES    = ["Car Loan","Home Loan","Personal Loan","Education Loan","Business Loan","Gold Loan","Other Loan"];
-const INVEST_TYPES  = ["Life Insurance","Term Insurance","Health Insurance","EPF","PPF","NPS","Mutual Fund","Stocks","SGB","Gold / SGB","Bonds","FD","Insurance","Other"];
+const INVEST_TYPES  = ["EPF","PPF","NPS","Mutual Fund","Stocks","SGB","Gold / SGB","Bonds","FD","Other"];
 const LEND_TYPES    = ["Lended"];
+const INSURANCE_ACCOUNT_TYPES = ["Life Insurance","Term Insurance","Health Insurance","Insurance"];
 const INSURANCE_TYPES = ["Life Insurance","Term Insurance","Health Insurance","ULIP / Endowment","Pension / Annuity","Other Insurance"];
 const CAT_EMOJI = {
   ...Object.fromEntries(EXPENSE_STRUCTURE.map(c=>[c.name,c.emoji])),
@@ -80,7 +81,7 @@ const CAT_EMOJI = {
   ...Object.fromEntries(TRANSFER_STRUCTURE.map(c=>[c.name,c.emoji])),
   Transfer:"↔️",Cashback:"✨",Adjustments:"📌",Insurance:"🛡️",Lended:"🤝",
 };
-const isInsuranceAccount=a=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(a?.type);
+const isInsuranceAccount=a=>INSURANCE_ACCOUNT_TYPES.includes(a?.type);
 const policyFrequencyLabel=f=>f==="halfyearly"?"Half-yearly":f==="yearly"?"Yearly":f==="monthly"?"Monthly":(f||"—");
 const policyFrequencyShort=f=>f==="halfyearly"?"Hly":f==="yearly"?"Yly":f==="monthly"?"Mly":(f||"—");
 const mainCategory=n=>CATEGORY_ALIASES[n]||n;
@@ -192,12 +193,15 @@ function LogoSelector({value,onChange,types=[]}){
   </div>
 }
 
-const INVESTMENT_DISPLAY_ORDER = ["Life Insurance","Term Insurance","Health Insurance","EPF","PPF","NPS","Mutual Fund","Stocks","SGB","Gold / SGB","FD","Bonds","Insurance","Other"];
+const INVESTMENT_DISPLAY_ORDER = ["EPF","PPF","NPS","Mutual Fund","Stocks","SGB","Gold / SGB","FD","Bonds","Other"];
+const INSURANCE_DISPLAY_ORDER = ["Life Insurance","Term Insurance","Health Insurance","Insurance"];
 const alphaNameSort=(a,b)=>(a?.name||"").localeCompare((b?.name||""),undefined,{numeric:true,sensitivity:"base"});
 const investmentTypeRank=t=>{const i=INVESTMENT_DISPLAY_ORDER.indexOf(t);return i===-1?999:i;};
+const insuranceTypeRank=t=>{const i=INSURANCE_DISPLAY_ORDER.indexOf(t);return i===-1?999:i;};
 function sortSectionRows(section,rows=[]){
   const list=[...rows];
   if(section==="Investment")return list.sort((a,b)=>investmentTypeRank(a?.type)-investmentTypeRank(b?.type)||alphaNameSort(a,b));
+  if(section==="Insurance")return list.sort((a,b)=>insuranceTypeRank(a?.type)-insuranceTypeRank(b?.type)||alphaNameSort(a,b));
   if(section==="Lended")return list.sort((a,b)=>(a?.lendDirection===b?.lendDirection?alphaNameSort(a,b):(a?.lendDirection==="to"?-1:1)));
   return list.sort(alphaNameSort);
 }
@@ -1023,7 +1027,13 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const accountRows=[...data.accounts,...goalRows];
   const assetValue=data.accounts.reduce((s,a)=>s+assetAccountValue(a,balances[a.id]||0),0);
   const debtValue=data.accounts.reduce((s,a)=>s+debtAccountValue(a,balances[a.id]||0),0);
-  const financeRows=data.accounts.map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)})).filter(r=>Math.abs(r.value)>0).sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
+  const financeSections=[
+    {title:"Savings Account",rows:sortSectionRows("Savings Account",data.accounts.filter(a=>BANK_TYPES.includes(a.type))).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+    {title:"Credit Cards",rows:sortSectionRows("Credit Cards",data.accounts.filter(a=>a.type==="Credit Card")).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+    {title:"Debt",rows:sortSectionRows("Debt",data.accounts.filter(a=>a.type==="Loan")).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+    {title:"Investment",rows:sortSectionRows("Investment",data.accounts.filter(a=>INVEST_TYPES.includes(a.type))).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+    {title:"Lended",rows:sortSectionRows("Lended",data.accounts.filter(a=>a.type==="Lended")).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+  ].filter(s=>s.rows.length>0);
   const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
   const lastTxnFor=id=>[...data.transactions].filter(t=>t.accountId===id||t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const lastPaidForCC=id=>[...data.transactions].filter(t=>t.type==="transfer"&&t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
@@ -1059,12 +1069,12 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
     <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 28px"}}>
         <TopSwitch active={section==="accounts"} onClick={()=>setSection("accounts")} icon="▣" label="Accounts"/>
-        <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My finances"/>
+        <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My Finances"/>
       </div>
     </div>
     <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",padding:"12px 12px 86px",maxWidth:"100vw"}}>
       {section==="finance"?(
-        <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth} rows={financeRows}/>
+        <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth} sections={financeSections}/>
       ):(
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
@@ -1073,6 +1083,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
             <AccountSection title="Credit Cards" rows={sortSectionRows("Credit Cards",accountRows.filter(a=>a.type==="Credit Card"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Debt" rows={sortSectionRows("Debt",accountRows.filter(a=>a.type==="Loan"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Investment" rows={sortSectionRows("Investment",accountRows.filter(a=>INVEST_TYPES.includes(a.type)))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Insurance" rows={sortSectionRows("Insurance",accountRows.filter(a=>isInsuranceAccount(a)))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Lended" rows={sortSectionRows("Lended",accountRows.filter(a=>a.type==="Lended"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Goals" rows={sortSectionRows("Goals",accountRows.filter(a=>a._goal||a.type==="Goal"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <button onClick={()=>setModal("acctpicker")} style={AddAccountRow}><div style={DashedPlus}>＋</div><div style={{fontSize:17,color:C.ink,fontWeight:650}}>Add account / finance</div></button>
@@ -1084,7 +1095,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
 }
 
 function AccountSection({title,rows,render}){
-  const[open,setOpen]=useState(true);
+  const[open,setOpen]=useState(false);
   if(!rows.length)return null;
   return <div style={{display:"grid",gap:8,minWidth:0,maxWidth:"100%",overflow:"hidden"}}>
     <button onClick={()=>setOpen(!open)} style={{border:"none",background:"transparent",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"2px 2px",cursor:"pointer",textAlign:"left"}}>
@@ -1146,9 +1157,9 @@ function AccountTransactionsView({account,data,balances,netWorth,accountValue,se
     <FloatingAdd onClick={()=>setModal("txn",{accountId:account.id})}/>
   </div>;
 }
-function FinanceOnlyView({assets,debts,netWorth,rows=[]}){
+function FinanceOnlyView({assets,debts,netWorth,sections=[]}){
   return <div style={{paddingTop:2}}>
-    <FinanceSummary assets={assets} debts={debts} netWorth={netWorth} rows={rows}/>
+    <FinanceSummary assets={assets} debts={debts} netWorth={netWorth} sections={sections}/>
   </div>;
 }
 function progressPct(value,target){const t=+target||0;if(t<=0)return 0;return Math.max(0,Math.min(100,((+value||0)/t)*100));}
@@ -1275,17 +1286,26 @@ function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",t
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
   </div>
 </div>}
-function FinanceSummary({assets,debts,netWorth,rows=[]}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
+function FinanceSummary({assets,debts,netWorth,sections=[]}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
+  <div style={{padding:"13px 12px 4px",fontSize:18,fontWeight:950,color:C.ink}}>My Finances</div>
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
     <div style={{padding:"12px",textAlign:"center",borderRight:`1px solid ${C.border}`}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Assets</div><div style={{fontSize:18,fontWeight:800,color:C.income,marginTop:5}}>{inr(assets)}</div></div>
     <div style={{padding:"12px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:800,color:C.muted}}>Debts</div><div style={{fontSize:18,fontWeight:800,color:C.expense,marginTop:5}}>{inr(debts)}</div></div>
   </div>
-  {rows.length>0&&<div style={{padding:"10px 12px",display:"grid",gap:7,borderBottom:`1px solid ${C.border}`,background:"#fff"}}>
-    {rows.slice(0,12).map(r=><div key={r.account.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,fontSize:12}}>
-      <span style={{fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.account.name}</span>
-      <span style={{fontWeight:950,color:r.value>=0?C.income:C.expense,whiteSpace:"nowrap"}}>{inr(r.value)}</span>
-    </div>)}
-  </div>}
+  <div style={{padding:"10px 12px",display:"grid",gap:12,borderBottom:`1px solid ${C.border}`,background:"#fff"}}>
+    {sections.length===0?<div style={{fontSize:12,color:C.muted,fontWeight:800,textAlign:"center",padding:"8px 0"}}>No finance accounts yet</div>:sections.map(sec=>{
+      const total=sec.rows.reduce((s,r)=>s+(+r.value||0),0);
+      return <div key={sec.title} style={{display:"grid",gap:6}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,borderBottom:`1px dashed ${C.border}`,paddingBottom:4}}>
+          <span style={{fontSize:11,fontWeight:950,color:C.muted,textTransform:"uppercase",letterSpacing:".07em"}}>{sec.title}</span>
+          <span style={{fontSize:11,fontWeight:950,color:total>=0?C.income:C.expense}}>{inr(total)}</span>
+        </div>
+        {sec.rows.map(r=><div key={r.account.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,fontSize:12}}>
+          <span style={{fontWeight:800,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.account.name}</span>
+          <span style={{fontWeight:950,color:r.value>=0?C.income:C.expense,whiteSpace:"nowrap"}}>{inr(r.value)}</span>
+        </div>)}
+      </div>})}
+  </div>
   <div style={{padding:"13px 12px",textAlign:"center",background:C.bg}}><div style={{fontSize:12,fontWeight:700,color:C.muted}}>Overall Amount</div><div style={{fontSize:22,fontWeight:900,color:netWorth>=0?C.income:C.expense,marginTop:4}}>{inr(netWorth)}</div></div>
 </div>}
 function catLabel(n){return mainCategory(n)||n;}
@@ -1802,16 +1822,18 @@ function AccountPickerModal({close,setModal}){
       {label:"Loan",desc:"Personal, car, education or other loan",go:()=>setModal("loan",{title:"Add Loan",presetLoanType:"Personal Loan"})},
       {label:"Mortgage",desc:"Home loan / housing mortgage",go:()=>setModal("loan",{title:"Add Mortgage",presetLoanType:"Home Loan"})},
     ]},
-    {title:"Investment",sub:"Life, Term, Health, EPF, PPF, NPS, Mutual Fund, Stocks, SGB",items:[
-      {label:"Life Insurance",desc:"LIC/HDFC Life policies with maturity value",go:()=>setModal("account",{title:"Add Life Insurance",presetType:"Life Insurance"})},
-      {label:"Term Insurance",desc:"Protection policy; documentation + premium reminders",go:()=>setModal("account",{title:"Add Term Insurance",presetType:"Term Insurance"})},
-      {label:"Health Insurance",desc:"Medical insurance; documentation + premium reminders",go:()=>setModal("account",{title:"Add Health Insurance",presetType:"Health Insurance"})},
+    {title:"Investment",sub:"EPF, PPF, NPS, Mutual Fund, Stocks, SGB",items:[
       {label:"EPF",desc:"Employee Provident Fund",go:()=>setModal("account",{title:"Add EPF",presetType:"EPF"})},
       {label:"PPF",desc:"Public Provident Fund",go:()=>setModal("account",{title:"Add PPF",presetType:"PPF"})},
       {label:"NPS",desc:"National Pension System",go:()=>setModal("account",{title:"Add NPS",presetType:"NPS"})},
       {label:"Mutual Fund",desc:"Track mutual fund value",go:()=>setModal("account",{title:"Add Mutual Fund",presetType:"Mutual Fund"})},
       {label:"Stocks",desc:"Track demat / stock portfolio value",go:()=>setModal("account",{title:"Add Stocks",presetType:"Stocks"})},
       {label:"SGB",desc:"Sovereign Gold Bond",go:()=>setModal("account",{title:"Add SGB",presetType:"SGB"})},
+    ]},
+    {title:"Insurance",sub:"Life, Term, Health",items:[
+      {label:"Life Insurance",desc:"LIC/HDFC Life policies and premium reminders",go:()=>setModal("account",{title:"Add Life Insurance",presetType:"Life Insurance"})},
+      {label:"Term Insurance",desc:"Protection policy; documentation + premium reminders",go:()=>setModal("account",{title:"Add Term Insurance",presetType:"Term Insurance"})},
+      {label:"Health Insurance",desc:"Medical insurance; documentation + premium reminders",go:()=>setModal("account",{title:"Add Health Insurance",presetType:"Health Insurance"})},
     ]},
     {title:"Lended",sub:"Money lent to someone or borrowed from someone",items:[
       {label:"Lent / Borrowed",desc:"Track person-wise amount using transfers",go:()=>setModal("account",{title:"Add Lended",presetType:"Lended"})},
@@ -1832,8 +1854,8 @@ function AccountPickerModal({close,setModal}){
 }
 
 function AccountModal({close,addAcc,addRec,data,presetType,title}){
-  const allTypes=[...BANK_TYPES,...INVEST_TYPES,...LEND_TYPES];
-  const isInsuranceType=t=>["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(t);
+  const allTypes=[...BANK_TYPES,...INVEST_TYPES,...INSURANCE_ACCOUNT_TYPES,...LEND_TYPES];
+  const isInsuranceType=t=>INSURANCE_ACCOUNT_TYPES.includes(t);
   const defaultLogo=presetType==="Health Insurance"?"starhealth":presetType==="Term Insurance"||presetType==="Life Insurance"||presetType==="Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
   const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
   const isIns=isInsuranceType(f.type);
@@ -1912,7 +1934,7 @@ function CreditCardModal({close,addAcc}){
 }
 
 function EditAccModal({close,account,editAcc,delAcc}){
-  const[f,setF]=useState({type:account.type,name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||"",lendDirection:account.lendDirection||"to",personName:account.personName||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=["Insurance","Life Insurance","Term Insurance","Health Insurance"].includes(account.type);
+  const[f,setF]=useState({type:account.type,name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||"",lendDirection:account.lendDirection||"to",personName:account.personName||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=INSURANCE_ACCOUNT_TYPES.includes(account.type);
   return(<Sheet close={close} title="Edit Account">
     <L>Name</L><input style={F} value={f.name} onChange={s("name")}/>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[account.type]}/><L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
