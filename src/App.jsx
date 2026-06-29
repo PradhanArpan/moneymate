@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.7 Finance + Insurance Sections
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.9 Fixed Banners + PWA Logo
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -703,10 +703,35 @@ function PinScreen({isSetup,onSetup,onUnlock,err,setErr,onForgot}){
   </div>);
 }
 
+
+function ensureMoneyMatePWAAssets(){
+  if(typeof document==="undefined")return;
+  document.title="MoneyMate";
+  const addOrUpdateLink=(rel,href,attrs={})=>{
+    let el=document.querySelector(`link[rel="${rel}"]`);
+    if(!el){el=document.createElement("link");el.rel=rel;document.head.appendChild(el);}
+    el.href=href;
+    Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));
+  };
+  const addOrUpdateMeta=(name,content)=>{
+    let el=document.querySelector(`meta[name="${name}"]`);
+    if(!el){el=document.createElement("meta");el.name=name;document.head.appendChild(el);}
+    el.content=content;
+  };
+  addOrUpdateLink("manifest","/manifest.webmanifest");
+  addOrUpdateLink("icon","/moneymate-icon-192.png",{type:"image/png",sizes:"192x192"});
+  addOrUpdateLink("apple-touch-icon","/apple-touch-icon.png",{sizes:"180x180"});
+  addOrUpdateMeta("theme-color",C.brand);
+  addOrUpdateMeta("apple-mobile-web-app-capable","yes");
+  addOrUpdateMeta("apple-mobile-web-app-title","MoneyMate");
+  addOrUpdateMeta("mobile-web-app-capable","yes");
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    APP ROOT
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export default function App(){
+  useEffect(()=>{ensureMoneyMatePWAAssets();},[]);
   const[phase,setPhase]=useState("loading");
   const[pin,setPin]=useState("");const[err,setErr]=useState("");const[data,setData]=useState(EMPTY);
   useEffect(()=>{setPhase(localStorage.getItem("mm:setup")?"lock":"setup");},[]);
@@ -810,9 +835,9 @@ function Main({data,persist,pin}){
     importBatch,restoreData,exportCSV,setModal:M};
 
   return(
-    <div style={{minHeight:"100vh",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.ink}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}body{background:#F7F4FF;margin:0;overflow-x:hidden;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid #E5E1F3;} .budget-carousel::-webkit-scrollbar{display:none;} .budget-track{display:flex;gap:8px;width:max-content;animation:mmBudgetSlide 34s linear infinite;padding:10px 14px 12px;} .budget-carousel:active .budget-track{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
-      <div style={{paddingBottom:76}}>
+    <div style={{height:"100dvh",maxHeight:"100dvh",overflow:"hidden",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.ink}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}html,body,#root{width:100%;height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:#F7F4FF;}input:focus,select:focus{outline:none;border-color:#6C5CE7!important;}button{font-family:inherit;} .budget-carousel{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid #E5E1F3;} .budget-carousel::-webkit-scrollbar{display:none;} .budget-track{display:flex;gap:8px;width:max-content;animation:mmBudgetSlide 34s linear infinite;padding:10px 14px 12px;} .budget-carousel:active .budget-track{animation-play-state:paused;} @media (hover:hover){.budget-carousel:hover .budget-track{animation-play-state:paused;}} @keyframes mmBudgetSlide{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+      <div style={{height:"100%",overflow:"hidden"}}>
         {tab==="home"    &&<HomeTab    {...shared}/>} 
         {tab==="entries" &&<EntriesTab {...shared}/>} 
         {tab==="categories"&&<CategoriesTab {...shared}/>} 
@@ -883,9 +908,9 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
     }
     return out;
   },[data,period,month]);
-  return(<div style={Screen}>
+  return(<div style={FixedScreen}>
     <MoneyHeader netWorth={netWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
-    <div style={{padding:"16px 18px 8px"}}>
+    <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
         <SoftBalance label="Starting balance" value={inr(netWorth-savings)}/>
         <SoftBalance label="Ending balance" value={inr(netWorth)}/>
@@ -993,9 +1018,9 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
   const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
   const endingBal=accountFilter==="all"?savingsTxnAccounts(data).reduce((s,a)=>s+(balances?.[a.id]||0),0):(balances?.[accountFilter]||0);
   const startBal=endingBal-periodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter,data),0);
-  return(<div style={Screen}>
+  return(<div style={FixedScreen}>
     <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
-    <div style={{padding:"16px 18px 8px"}}>
+    <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
         <SoftBalance label="Starting balance" value={inr(startBal)}/>
@@ -1067,15 +1092,9 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
   if(detail){ setDetail(null); }
-  return(<div style={{...Screen,height:"100dvh",overflow:"hidden",overflowX:"hidden",maxWidth:"100vw",display:"flex",flexDirection:"column"}}>
-    <AccountRibbon netWorth={netWorth} onAdd={()=>setModal("acctpicker")}/>
-    <div style={{background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 28px"}}>
-        <TopSwitch active={section==="accounts"} onClick={()=>setSection("accounts")} icon="▣" label="Accounts"/>
-        <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My Finances"/>
-      </div>
-    </div>
-    <div style={{flex:1,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",padding:"12px 12px 86px",maxWidth:"100vw"}}>
+  return(<div style={{...FixedScreen,overflowX:"hidden",maxWidth:"100vw"}}>
+    <AccountsHeader netWorth={netWorth} onAdd={()=>setModal("acctpicker")} section={section} setSection={setSection}/>
+    <div style={{...ScrollPane,padding:"12px 12px calc(86px + env(safe-area-inset-bottom))",maxWidth:"100vw"}}>
       {section==="finance"?(
         <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth} sections={financeSections}/>
       ):(
@@ -1229,9 +1248,9 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
     const pa=parseBudgetKey(a[0]), pb=parseBudgetKey(b[0]);
     return pa.cat.localeCompare(pb.cat)||pa.sub.localeCompare(pb.sub);
   });
-  return(<div style={Screen}>
+  return(<div style={FixedScreen}>
     <MoneyHeader netWorth={netWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
-    <div style={{padding:"0 0 18px"}}>
+    <div style={{...ScrollPane,padding:"0 0 calc(86px + env(safe-area-inset-bottom))"}}>
       <BudgetBand title="Expenses" sub={`spent ${inr(exp)}`} amount={inr(exp)} budget={`budgeted ${inr(totalBudget)}`} color="#F7D7E8"/>
       <BudgetCategoryCarousel rows={rows} onBudget={(r)=>r?.key?setModal("budget",{month,key:r.key,amount:r.budget,scope:(data.budgetOverrides||{})[month]?.[r.key]!==undefined?"thisMonth":"repeat"}):setModal("budget",{month})}/>
       <BudgetBand title="Savings" sub={`credited to goals/investments ${inr(saved)}`} amount={inr(saved)} budget="linked to goals / investments" color="#FFE7D5"/>
@@ -1254,7 +1273,9 @@ function BudgetsTab({data,delBudget,setModal,netWorth,expCats}){
 }
 
 /* ── 1Money-style UI helpers ───────────────────────────────────── */
-const Screen={height:"100dvh",background:C.bg,paddingBottom:66,overflowX:"hidden",overflowY:"auto",WebkitOverflowScrolling:"touch"};
+const Screen={height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:C.bg,paddingBottom:"calc(66px + env(safe-area-inset-bottom))",overflowX:"hidden",overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"};
+const FixedScreen={height:"100dvh",minHeight:"100dvh",maxHeight:"100dvh",background:C.bg,overflow:"hidden",overflowX:"hidden",display:"flex",flexDirection:"column",overscrollBehavior:"none"};
+const ScrollPane={flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",paddingBottom:"calc(86px + env(safe-area-inset-bottom))"};
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
@@ -1287,6 +1308,17 @@ function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",t
     <HeaderAvatar/>
     <div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:650}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,lineHeight:1.05,marginTop:1,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></div>
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
+  </div>
+</div>}
+function AccountsHeader({netWorth,onAdd,section,setSection}){return <div style={{zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 0",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
+  <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center",paddingBottom:8}}>
+    <HeaderAvatar/>
+    <div style={{textAlign:"center",minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,lineHeight:1.05,marginTop:1,letterSpacing:"-.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inr(netWorth)}</div></div>
+    <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,padding:"0 16px"}}>
+    <TopSwitch active={section==="accounts"} onClick={()=>setSection("accounts")} icon="▣" label="Accounts"/>
+    <TopSwitch active={section==="finance"} onClick={()=>setSection("finance")} icon="₹" label="My Finances"/>
   </div>
 </div>}
 function FinanceSummary({assets,debts,netWorth,sections=[]}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,overflow:"hidden",marginBottom:18,boxShadow:"0 4px 16px rgba(32,33,44,.05)"}}>
