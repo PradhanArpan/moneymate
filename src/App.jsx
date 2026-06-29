@@ -599,9 +599,11 @@ const DEFAULT_ACCOUNTS=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLic
    sanctionedAmount:780000,outstandingAmount:576797,opening:0,hint:""},
 ]));
 const DEFAULT_RECURRING=ensureHardcodedLicRecurring([],DEFAULT_ACCOUNTS);
+const DEFAULT_PROFILE={name:"MoneyMate User",email:"",phone:"",city:"",notes:"",photoDataUrl:""};
 const EMPTY={
   accounts:DEFAULT_ACCOUNTS,transactions:[],budgets:{},
   goals:[],recurring:DEFAULT_RECURRING,customCats:{expense:[],income:[]},budgetOverrides:{},
+  profile:DEFAULT_PROFILE,
 };
 const normalize=d=>{
   const accounts=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS));
@@ -619,6 +621,7 @@ const normalize=d=>{
     recurring,
     customCats:{expense:[],income:[],...(d.customCats||{})},
     budgetOverrides:d.budgetOverrides||{},
+    profile:{...DEFAULT_PROFILE,...(d.profile||{})},
     goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",linkedAccountIds:[],investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
   };
 };
@@ -1128,6 +1131,7 @@ function Main({data,persist,pin}){
   };
   const importBatch=txns=>persist({...data,transactions:[...data.transactions,...txns]});
   const restoreData=d=>{persist(d);};
+  const editProfile=ch=>persist({...data,profile:{...DEFAULT_PROFILE,...(data.profile||{}),...ch}});
   const exportCSV=()=>{const head="Date,Type,Category,Account,Amount,Note\n";const body=[...data.transactions].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId)?.name||"";const q=s=>`"${String(s||"").replace(/"/g,'""')}"`;return[t.date,t.type,q(t.category),q(acc),t.amount,q(t.note)].join(",");}).join("\n");const url=URL.createObjectURL(new Blob([head+body],{type:"text/csv"}));const a=document.createElement("a");a.href=url;a.download=`moneymate-${today()}.csv`;a.click();URL.revokeObjectURL(url);};
 
   const expCats=[...EXPENSE_CATS,...data.customCats.expense];
@@ -1160,7 +1164,7 @@ function Main({data,persist,pin}){
     {id:"budgets",Icon:Target,label:"Budget"},
     {id:"home",Icon:TrendingUp,label:"Overview"},
   ];
-  const shared={data,balances,netWorth,liquidNetWorth,expCats,incCats,bankAccounts,cashAccount,ccDueAlerts,backupReminder,
+  const shared={data,balances,netWorth,liquidNetWorth,profile:{...DEFAULT_PROFILE,...(data.profile||{})},onProfileClick:()=>M("profile"),expCats,incCats,bankAccounts,cashAccount,ccDueAlerts,backupReminder,
     addTxn,addTxns,delTxn,editTxn,addAcc,delAcc,editAcc,editLoan,editCC,payLoan,
     addGoal,delGoal,editGoal,setBudget,delBudget,addCat,addRec,delRec,skipRecOccurrence,deleteRecFuture,editRecOccurrence,payRecurringOccurrence,markPaid,
     importBatch,restoreData,exportCSV,setModal:M};
@@ -1203,6 +1207,7 @@ function Main({data,persist,pin}){
       {modal?.type==="addcat"    &&<AddCategoryModal close={close} addCat={addCat} expCats={expCats}/>} 
       {modal?.type==="import"    &&<ImportModal     close={close} data={data} importBatch={importBatch} expCats={expCats} incCats={incCats}/>} 
       {modal?.type==="settings"  &&<SettingsModal   close={close} data={data} pin={pin} restoreData={restoreData}/>} 
+      {modal?.type==="profile"   &&<ProfileModal    close={close} profile={{...DEFAULT_PROFILE,...(data.profile||{})}} editProfile={editProfile}/>} 
     </div>
   );
 }
@@ -1210,7 +1215,7 @@ function Main({data,persist,pin}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    OVERVIEW TAB — 1Money-style summary
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function HomeTab({data,balances,netWorth,liquidNetWorth,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
+function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=periodTxns(data.transactions,period);
   const month=period.kind==="month"?period.month:curMo();
@@ -1240,7 +1245,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,ccDueAlerts,backupRemind
     return out;
   },[data,period,month]);
   return(<div style={FixedScreen}>
-    <MoneyHeader netWorth={liquidNetWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
+    <MoneyHeader netWorth={liquidNetWorth} profile={profile} onAvatarClick={onProfileClick} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
     <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:800}}>Overview</div><div style={{fontSize:22,color:C.muted,fontWeight:800}}>{inr(savings)}</div></div>
@@ -1289,7 +1294,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,ccDueAlerts,backupRemind
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CATEGORIES TAB — close to 1Money/Monefy-style wheel
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth}){
+function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth,profile,onProfileClick}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=periodTxns(data.transactions,period);
   const rows=categoryRows(txns,expCats);
@@ -1302,7 +1307,7 @@ function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth}){
   const withBudgets=r=>({...r,budget:categoryBudgetTotal(periodBudget,r.name),fillColor:pieColorMap[mainCategory(r.name)]||C.charts[(visible.findIndex(v=>mainCategory(v.name)===mainCategory(r.name))+C.charts.length)%C.charts.length]});
   const top=visible.slice(0,4).map(withBudgets), side=visible.slice(4,8).map(withBudgets), bottom=visible.slice(8,12).map(withBudgets);
   return(<div style={{...Screen,height:"100dvh",overflow:"hidden",overflowY:"hidden",overscrollBehavior:"none",paddingBottom:58}}>
-    <MoneyHeader netWorth={liquidNetWorth} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<span/>}/>
+    <MoneyHeader netWorth={liquidNetWorth} profile={profile} onAvatarClick={onProfileClick} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<span/>}/>
     <div style={{height:"calc(100dvh - 210px)",minHeight:0,overflow:"hidden",padding:"4px 7px 0",display:"flex",flexDirection:"column",touchAction:"manipulation"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:1,alignItems:"start",height:70,flexShrink:0}}>
         {top.map((r,i)=><CategoryBubble tiny key={r.name} row={r} index={i} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}/>) }
@@ -1345,7 +1350,7 @@ function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TRANSACTIONS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,liquidNetWorth,payRecurringOccurrence}){
+function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,liquidNetWorth,profile,onProfileClick,payRecurringOccurrence}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const[search,setSearch]=useState("");
   const[accountFilter,setAccountFilter]=useState("all");
@@ -1358,7 +1363,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
   const endingBal=accountFilter==="all"?savingsTxnAccounts(data).reduce((s,a)=>s+(balances?.[a.id]||0),0):(balances?.[accountFilter]||0);
   const startBal=endingBal-realPeriodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter,data),0);
   return(<div style={FixedScreen}>
-    <MoneyHeader netWorth={endingBal} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
+    <MoneyHeader netWorth={endingBal} profile={profile} onAvatarClick={onProfileClick} accountLabel={txnAccountLabel(data,accountFilter)} onAccountClick={cycleAccount} period={period} setPeriod={setPeriod} periodModes={["date","month","year"]} right={<button onClick={()=>setSearch(search?"":" ")} style={HeaderIconBtn}><Search size={32}/></button>}/>
     <div style={{...ScrollPane,padding:"16px 18px calc(160px + env(safe-area-inset-bottom))"}}>
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
@@ -1385,7 +1390,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ACCOUNTS TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
+function AccountsTab({data,balances,netWorth,profile,onProfileClick,delAcc,delGoal,setModal}){
   const[section,setSection]=useState("accounts");
   const[detail,setDetail]=useState(null);
   const debtTypes=["Loan","Credit Card"];
@@ -1432,7 +1437,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   };
   if(detail){ setDetail(null); }
   return(<div style={{...FixedScreen,overflowX:"hidden",maxWidth:"100vw"}}>
-    <AccountsHeader netWorth={netWorth} onAdd={()=>setModal("acctpicker")} section={section} setSection={setSection}/>
+    <AccountsHeader netWorth={netWorth} profile={profile} onProfileClick={onProfileClick} onAdd={()=>setModal("acctpicker")} section={section} setSection={setSection}/>
     <div style={{...ScrollPane,padding:"12px 12px calc(86px + env(safe-area-inset-bottom))",maxWidth:"100vw"}}>
       {section==="finance"?(
         <FinanceOnlyView assets={assetValue} debts={debtValue} netWorth={netWorth} sections={financeSections}/>
@@ -1574,7 +1579,7 @@ function GoalFuelMeter({goal}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    BUDGET TAB
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,expCats}){
+function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,profile,onProfileClick,expCats}){
   const[month,setMonth]=useState(curMo());
   const txns=data.transactions.filter(t=>mkKey(t.date)===month);
   const exp=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
@@ -1588,7 +1593,7 @@ function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,expCats}){
     return pa.cat.localeCompare(pb.cat)||pa.sub.localeCompare(pb.sub);
   });
   return(<div style={FixedScreen}>
-    <MoneyHeader netWorth={liquidNetWorth} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
+    <MoneyHeader netWorth={liquidNetWorth} profile={profile} onAvatarClick={onProfileClick} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{...ScrollPane,padding:"0 0 calc(86px + env(safe-area-inset-bottom))"}}>
       <BudgetBand title="Expenses" sub={`spent ${inr(exp)}`} amount={inr(exp)} budget={`budgeted ${inr(totalBudget)}`} color="#F7D7E8"/>
       <BudgetCategoryCarousel rows={rows} onBudget={(r)=>r?.key?setModal("budget",{month,key:r.key,amount:r.budget,scope:(data.budgetOverrides||{})[month]?.[r.key]!==undefined?"thisMonth":"repeat"}):setModal("budget",{month})}/>
@@ -1620,8 +1625,14 @@ const FooterActionBtn={border:"none",borderRadius:14,color:"#fff",fontWeight:950
 const FooterSecondaryBtn={border:`1px solid ${C.border}`,background:C.card,borderRadius:13,color:C.ink,fontWeight:900,fontSize:12,padding:"10px 8px",boxShadow:"0 4px 12px rgba(33,31,58,.05)",cursor:"pointer"};
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
-function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
-function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="Accounts",onAccountClick}){
+function HeaderAvatar({profile,onClick}){
+  const p={...DEFAULT_PROFILE,...(profile||{})};
+  const initial=(p.name||"M").trim().charAt(0).toUpperCase()||"M";
+  return <button type="button" onClick={onClick} title="Profile" style={{width:36,height:36,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:15,fontWeight:950,background:"rgba(255,255,255,.55)",overflow:"hidden",padding:0,cursor:onClick?"pointer":"default",color:C.brand}}>
+    {p.photoDataUrl?<img src={p.photoDataUrl} alt="Profile" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:initial}
+  </button>
+}
+function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="Accounts",onAccountClick,profile,onAvatarClick}){
   const p=period||{kind:"month",month:month||curMo()};
   const hasPeriod=!!(period||month);
   const shift=dir=>setPeriod?setPeriod(shiftPeriod(p,dir)):setMonth&&setMonth(dir>0?nextMo(month):prevMo(month));
@@ -1636,7 +1647,7 @@ function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodMod
   const lab=period?periodLabel(p):monthLabel(month);
   return(<div style={{position:"sticky",top:0,zIndex:15,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
     <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
-      <HeaderAvatar/><button onClick={onAccountClick||undefined} style={{textAlign:"center",border:"none",background:"transparent",cursor:onAccountClick?"pointer":"default",padding:0,minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountLabel}</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></button>{right||<span/>}
+      <HeaderAvatar profile={profile} onClick={onAvatarClick}/><button onClick={onAccountClick||undefined} style={{textAlign:"center",border:"none",background:"transparent",cursor:onAccountClick?"pointer":"default",padding:0,minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountLabel}</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></button>{right||<span/>}
     </div>
     {hasPeriod&&<div style={{display:"grid",gridTemplateColumns:"38px 1fr 38px",alignItems:"center",marginTop:9}}>
       <button onClick={()=>shift(-1)} style={HeaderArrow} aria-label="Previous"><ChevronLeft size={24}/></button>
@@ -1670,9 +1681,9 @@ function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",t
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
   </div>
 </div>}
-function AccountsHeader({netWorth,onAdd,section,setSection}){return <div style={{zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 0",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
+function AccountsHeader({netWorth,onAdd,section,setSection,profile,onProfileClick}){return <div style={{zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 0",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
   <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center",paddingBottom:8}}>
-    <HeaderAvatar/>
+    <HeaderAvatar profile={profile} onClick={onProfileClick}/>
     <div style={{textAlign:"center",minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,lineHeight:1.05,marginTop:1,letterSpacing:"-.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inr(netWorth)}</div></div>
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
   </div>
@@ -2555,6 +2566,59 @@ function BudgetModal({close,setBudget,expCats,month,editKey,editAmount,editScope
 }
 
 
+
+function resizeProfilePhoto(file,max=360){
+  return new Promise((resolve,reject)=>{
+    if(!file){resolve("");return;}
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error("Could not read image"));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error("Could not load image"));
+      img.onload=()=>{
+        const size=Math.min(img.width,img.height);
+        const sx=(img.width-size)/2, sy=(img.height-size)/2;
+        const canvas=document.createElement("canvas");
+        canvas.width=max;canvas.height=max;
+        const ctx=canvas.getContext("2d");
+        ctx.fillStyle="#F7F4FF";ctx.fillRect(0,0,max,max);
+        ctx.drawImage(img,sx,sy,size,size,0,0,max,max);
+        resolve(canvas.toDataURL("image/jpeg",0.84));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+function ProfileModal({close,profile,editProfile}){
+  const[f,setF]=useState({...DEFAULT_PROFILE,...(profile||{})});
+  const[busy,setBusy]=useState(false);
+  const[err,setErr]=useState("");
+  const s=k=>e=>setF({...f,[k]:e.target.value});
+  const photo=f.photoDataUrl;
+  return <Sheet close={close} title="My Profile">
+    <div style={{display:"flex",gap:14,alignItems:"center",marginBottom:14}}>
+      <div style={{width:72,height:72,borderRadius:"50%",border:`2px solid ${C.border}`,background:C.bg,display:"grid",placeItems:"center",overflow:"hidden",fontSize:28,fontWeight:950,color:C.brand,flexShrink:0}}>
+        {photo?<img src={photo} alt="Profile" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:(f.name||"M").trim().charAt(0).toUpperCase()||"M"}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:850,marginBottom:4}}>Profile photo</div>
+        <input type="file" accept="image/*" style={{fontSize:12,maxWidth:"100%"}} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{setBusy(true);setErr("");const img=await resizeProfilePhoto(file);setF(v=>({...v,photoDataUrl:img}));}catch{setErr("Could not use this photo. Try another image.");}finally{setBusy(false);}}}/>
+        {photo&&<button type="button" onClick={()=>setF({...f,photoDataUrl:""})} style={{...PlainSmall,marginTop:6}}>Remove photo</button>}
+      </div>
+    </div>
+    {busy&&<div style={{fontSize:12,color:C.muted,marginBottom:8}}>Preparing photo...</div>}
+    {err&&<div style={{fontSize:12,color:C.expense,fontWeight:800,marginBottom:8}}>{err}</div>}
+    <L>Name</L><input style={F} value={f.name} onChange={s("name")} placeholder="Your name"/>
+    <L>Email</L><input style={F} value={f.email} onChange={s("email")} placeholder="email@example.com"/>
+    <L>Mobile</L><input style={F} value={f.phone} onChange={s("phone")} placeholder="Mobile number"/>
+    <L>City / place</L><input style={F} value={f.city} onChange={s("city")} placeholder="City"/>
+    <L>Notes</L><textarea style={{...F,minHeight:82,resize:"vertical"}} value={f.notes} onChange={s("notes")} placeholder="Any personal note, family profile, money tracking note..."/>
+    <div style={{fontSize:12,color:C.muted,margin:"-4px 0 14px"}}>Saved only inside this MoneyMate data file on your device and included in encrypted backup.</div>
+    <button onClick={()=>{editProfile({name:f.name.trim()||"MoneyMate User",email:f.email.trim(),phone:f.phone.trim(),city:f.city.trim(),notes:f.notes.trim(),photoDataUrl:f.photoDataUrl||""});close();}} style={SB}>Save Profile</button>
+  </Sheet>
+}
+
 /* Settings — backup, restore */
 function SettingsModal({close,data,pin,restoreData}){
   const[restoreStep,setRestoreStep]=useState("idle");
@@ -2582,7 +2646,7 @@ function SettingsModal({close,data,pin,restoreData}){
     <div style={{background:C.bg,borderRadius:14,padding:16,marginBottom:12}}>
       <div style={{fontSize:14,fontWeight:700,marginBottom:4}}>💾 Backup</div>
       <div style={{fontSize:12,color:C.muted,marginBottom:10}}>{lb?`Last backup: ${daysAgo===0?"today":daysAgo===1?"yesterday":`${daysAgo} days ago`}`:"Never backed up"}</div>
-      <p style={{fontSize:12,color:C.muted,marginBottom:12}}>Downloads an encrypted .mmbackup file with accounts, goals, insurance details, budgets, recurring schedules, transactions, categories and settings. Safe to save in Google Drive, email to yourself, or WhatsApp. Only you can open it with your PIN.</p>
+      <p style={{fontSize:12,color:C.muted,marginBottom:12}}>Downloads an encrypted .mmbackup file with profile, profile photo, accounts, goals, insurance details, budgets, recurring schedules, transactions, categories and settings. Safe to save in Google Drive, email to yourself, or WhatsApp. Only you can open it with your PIN.</p>
       <button onClick={async()=>{await exportBackup(data,pin);}} style={SB}>Export full backup (.mmbackup)</button>
     </div>
 
