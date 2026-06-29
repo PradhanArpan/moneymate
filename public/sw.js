@@ -1,4 +1,5 @@
-const V="mm-v9-8";
-self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(["/","/index.html"])));self.skipWaiting();});
+const V="mm-v9-9-fixed-banners-pwa";
+const CORE=["/","/index.html","/manifest.webmanifest","/moneymate-icon-192.png","/moneymate-icon-512.png","/apple-touch-icon.png","/moneymate-icon.svg"];
+self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(CORE).catch(()=>{})));self.skipWaiting();});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))));self.clients.claim();});
-self.addEventListener("fetch",e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));});
+self.addEventListener("fetch",e=>{e.respondWith(fetch(e.request).then(r=>{const copy=r.clone();caches.open(V).then(c=>c.put(e.request,copy)).catch(()=>{});return r;}).catch(()=>caches.match(e.request).then(r=>r||caches.match("/index.html"))));});
