@@ -355,8 +355,8 @@ const toISO=(d,m,y)=>{const mm=isNaN(+m)?MONTHS[m.toLowerCase().slice(0,3)]:+m;l
 const CCAT=[[/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|thalassery|jalpan|food/i,"Food"],[/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana/i,"Groceries"],[/uber|ola|rapido|irctc|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],[/rent\b|landlord|pg\b/i,"Rent"],[/electricity|bescom|tneb|jio|airtel|broadband|dth|gas bill/i,"Utilities"],[/amazon|flipkart|myntra|ajio|nykaa|meesho/i,"Shopping"],[/pharmacy|apollo|medplus|hospital|clinic|1mg/i,"Health"],[/netflix|spotify|hotstar|bookmyshow|prime|pvr/i,"Entertainment"],[/\bemi\b|loan emi|car loan|home loan/i,"EMI"],[/school|college|udemy|tuition|byjus/i,"Education"],[/indstocks|iccl|zerodha|groww|upstox|indmoney|indianesign/i,"Other"]];
 const ICAT=[[/salary|sal cr|payroll/i,"Salary"],[/interest|int cr|int pd/i,"Interest"],[/dividend/i,"Interest"],[/refund|cashback|reversal/i,"Other"]];
 const guessCat=(d,t)=>{const r=t==="income"?ICAT:CCAT;for(const[re,c]of r)if(re.test(d))return c;return "Other";};
-const isCr=l=>/\bcr\b|credit|deposit|interest credit|dep tfr|by [a-z]|refund|cashback|nach.*cr/i.test(l);
-const isDr=l=>/\bdr\b|debit|withdraw|wdl\b|paid|sent/i.test(l);
+const isCr=l=>/\bcr\b|credit|deposit|interest credit|interest paid|int\.?pd|dep tfr|by [a-z]|refund|cashback|reversal|payout|nach.*cr/i.test(l);
+const isDr=l=>/\bdr\b|debit|withdraw|wdl\b|paid via|payment|sent|upi-|neft dr|nach.*dr/i.test(l);
 function detectTransfer(desc,accounts){
   const IFSC=[{re:/HDFC0/i,hints:["9712"]},{re:/SIBL0|SOUTH\s*I\s*\//i,hints:["0584"]},{re:/KKBK0/i,hints:["1924"]},{re:/SBIN0/i,hints:["4034","5194"]}];
   const banks=accounts.filter(a=>BANK_TYPES.includes(a.type)||a.type==="UPI / Wallet");
@@ -373,6 +373,9 @@ function matchRecurring(row,recurList){for(const r of recurList){const words=r.n
 function parseStatement(lines,accounts=[],recurList=[]){
   const all=lines.join(" ");
   const isKotak=/kotak mahindra|kkbk0007/i.test(all);
+  const isHdfc=/hdfc bank|HDFC0|Statement of account/i.test(all);
+  const isSbi=/state bank of india|SBIN0|STATEMENT OF ACCOUNT/i.test(all);
+  const isSib=/south indian bank|SIBL0|PARTICULARSDATE|A\/C NO/i.test(all);
   if(all.trim().length<80&&lines.length<3)return [];
   const out=[];let prevBal=null;
   const skip=l=>/^(date\b|sl\.?\s*no|transaction date|value date|particulars|narration|opening bal|closing bal|statement of|account no|page no)/i.test(l.trim());
@@ -396,13 +399,18 @@ function parseStatement(lines,accounts=[],recurList=[]){
         if(prevBal!==null){const d=bal-prevBal;amount=tx;if(Math.abs(Math.abs(d)-tx)<=Math.max(tx*0.02,1)){type=d>=0?"income":"expense";}else{type=isCr(cl)?"income":isDr(cl)?"expense":null;}}
         else{amount=tx;type=isCr(cl)?"income":isDr(cl)?"expense":"expense";}
       }else continue;
+      if(!type){
+        if(isHdfc){type=isCr(cl)?"income":isDr(cl)?"expense":"expense";}
+        else if(isSbi){type=/DEP TFR|INTEREST CREDIT|CREDIT|CR\b/i.test(cl)?"income":"expense";}
+        else if(isSib){type=/refund|neft from|imps.*from|deposit|cr\b/i.test(cl)?"income":"expense";}
+      }
       if(!type)continue;prevBal=bal;
     }
     if(!amount||amount<=0)continue;
     const desc=line.replace(DRE2,"").replace(DRE,"").replace(/\s[+\-][\d,]+\.\d{2}/g,"").replace(ARE,"").replace(/\b(Cr|Dr|CR|DR|A\/C)\b/g,"").replace(/[^\w\s\/\-@.:]/g," ").replace(/\s+/g," ").trim().slice(0,70);
     const xferTo=(isXferKw(line)||isXferKw(desc))?detectTransfer(desc+line,accounts):null;
     const recMatch=matchRecurring({desc,amount,type},recurList);
-    out.push({date,amount,type,desc,category:mainCategory(guessCat(desc,type)),subcategory:firstSub(mainCategory(guessCat(desc,type)),type),include:true,key:uid(),isXfer:!!xferTo,xferToId:xferTo||"",recurMatch:recMatch?{id:recMatch.id,name:recMatch.name}:null,balance:prevBal,bank:isKotak?"Kotak":"Generic"});
+    out.push({date,amount,type,desc,category:mainCategory(guessCat(desc,type)),subcategory:firstSub(mainCategory(guessCat(desc,type)),type),include:true,key:uid(),isXfer:!!xferTo,xferToId:xferTo||"",recurMatch:recMatch?{id:recMatch.id,name:recMatch.name}:null,balance:prevBal,bank:isKotak?"Kotak":isHdfc?"HDFC":isSbi?"SBI":isSib?"SIB":"Generic"});
   }
   return out;
 }
@@ -442,7 +450,7 @@ function summarizeImportRows(rows=[]){
   const withBal=rows.filter(r=>typeof r.balance==="number"&&isFinite(r.balance));
   const balanceIssues=rows.filter(r=>r.balanceIssue).length;
   const transferPairs=rows.filter(r=>r.transferPair).length;
-  return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length,balanceIssues,transferPairs,lowOcr};
+  return {count:rows.length,debit,credit,duplicates:dup,review,balanceRows:withBal.length,balanceIssues,transferPairs};
 }
 const amountEffect=r=>r.type==="income"?(+r.amount||0):-(+r.amount||0);
 function balanceAuditRows(rows=[]){
@@ -529,16 +537,9 @@ function Main({data,persist,pin}){
   const[modal,setModal]=useState(null);
   const M=(type,extra={})=>setModal({type,...extra});
   const close=()=>setModal(null);
-  const goTab=id=>{
-    setTab(id);
-    try{
-      if(id==="categories")window.history.replaceState({mmTab:id},"");
-      else window.history.pushState({mmTab:id},"");
-    }catch{}
-  };
+  const goTab=id=>setTab(id);
   useEffect(()=>{
-    try{window.history.replaceState({mmTab:"categories"},"");}catch{}
-    const onPop=()=>{setModal(null);setTab("categories");};
+    const onPop=()=>{setModal(null);};
     window.addEventListener("popstate",onPop);
     return()=>window.removeEventListener("popstate",onPop);
   },[]);
@@ -1744,7 +1745,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
         catch(e){textParseError=e;}
       }
       setProfile({...prof,mode:readMode});
-      if(!parsed.length){setErr("Could not confidently read transactions from embedded PDF text. This statement may need stronger bank-specific rules or a cleaner unlocked PDF. Try splitting the statement and importing again.");setStep("pick");return;}
+      if(!parsed.length){setErr("Could not confidently read transactions from embedded PDF text. Try an unlocked PDF, split the statement into smaller date ranges, or use CSV/Excel export if available. OCR is disabled because these statements contain embedded text.");setStep("pick");return;}
       const targetAcc=hit?.id||accId;
       const serialStats=extractStatementSerials(lines);
       const audit=balanceAuditRows(parsed);
