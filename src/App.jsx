@@ -199,6 +199,19 @@ const periodRange=p=>{
   if(p.kind==="custom")return {start:p.start||"0000-00-00",end:p.end||"9999-99-99"};
   return null;
 };
+function ordinalDay(n){
+  const d=+n||0;
+  if(!d)return "not set";
+  const mod100=d%100;
+  const suffix=(mod100>=11&&mod100<=13)?"th":({1:"st",2:"nd",3:"rd"}[d%10]||"th");
+  return `${d}${suffix}`;
+}
+function fmtShortDate(date){
+  if(!date)return "—";
+  const dt=new Date(date);
+  if(Number.isNaN(dt.getTime()))return String(date);
+  return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+}
 const periodLabel=p=>{
   if(!p||p.kind==="month")return monthLabel(p?.month||curMo());
   if(p.kind==="date"||p.kind==="today")return new Date(p.date||today()).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
@@ -827,6 +840,7 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
   const debtValue=data.accounts.reduce((s,a)=>debtTypes.includes(a.type)?s+Math.abs(balances[a.id]||0):s,0);
   const accountValue=a=>a._goal?(a.value||0):(balances[a.id]||0);
   const lastTxnFor=id=>[...data.transactions].filter(t=>t.accountId===id||t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
+  const lastPaidForCC=id=>[...data.transactions].filter(t=>t.type==="transfer"&&t.toAccountId===id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const accountSub=a=>{
     if(a._goal){
       const pct=progressPct(a.value,a.target);
@@ -836,7 +850,12 @@ function AccountsTab({data,balances,netWorth,delAcc,delGoal,setModal}){
       const pct=loanPaidPct(a);
       return `${a.loanType||"Loan"} · ${Math.round(pct)}% repaid`;
     }
-    if(a.type==="Credit Card")return `${a.ccType||"Credit Card"} · outstanding ${inr(Math.abs(accountValue(a)))}`;
+    if(a.type==="Credit Card"){
+      const paid=lastPaidForCC(a.id);
+      const due=a.dueDay?`Due Date ${ordinalDay(a.dueDay)}`:"Due Date not set";
+      const last=paid?`Last Paid ${fmtShortDate(paid.date)}`:"Last Paid —";
+      return `${a.ccType||"Credit Card"} · ${due} · ${last}`;
+    }
     return a.accountNumber?`A/c ${a.accountNumber}`:(a.hint?`A/c ending ${a.hint}`:a.type);
   };
   if(detail){ setDetail(null); }
@@ -958,7 +977,7 @@ function LoanFuelMeter({loan}){
 function CreditCardFuelMeter({card,value}){
   const u=creditCardUsage(card,value);
   if(!u.limit)return <FuelMeter pct={0} left="Credit limit not set" right=""/>;
-  return <CreditLimitMeter availablePct={u.availablePct} usedPct={u.usedPct} over={u.over} left={`Available ${inr(u.available)}`} right={`Used ${inr(u.used)} / ${inr(u.limit)}`}/>;
+  return <CreditLimitMeter availablePct={u.availablePct} usedPct={u.usedPct} over={u.over} left={`Available ${inr(u.available)}`} right={`Limit ${inr(u.limit)}`}/>;
 }
 function CreditLimitMeter({availablePct=0,usedPct=0,over=false,left="",right=""}){
   const a=Math.max(0,Math.min(100,availablePct));
