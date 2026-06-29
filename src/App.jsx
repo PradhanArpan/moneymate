@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.1 LIC Policy Details
+   MONEYMATE  ·  Smart Money Tracker  ·  v9.3 LIC Premium Schedule
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -255,23 +255,47 @@ const convertPeriod=(p,kind)=>{
 const periodTxns=(txns,p)=>{const r=periodRange(p);if(!r)return txns;return txns.filter(t=>t.date>=r.start&&t.date<=r.end);};
 const dateDiff=(a,b)=>Math.round((new Date(a).getTime()-new Date(b).getTime())/86400000);
 const recIntervalMonths=r=>({monthly:1,halfyearly:6,yearly:12}[r.frequency||"monthly"]||1);
+const dueDateForMonth=(r,mk)=>{
+  const[y,m]=mk.split("-").map(Number),ld=new Date(y,m,0).getDate();
+  const d=Math.min(Math.max(+r.day||+String(r.startDate||"").slice(8,10)||1,1),ld);
+  return `${mk}-${String(d).padStart(2,"0")}`;
+};
 const recurringDueDate=r=>{
-  const mk=curMo(),[y,m]=mk.split("-").map(Number),ld=new Date(y,m,0).getDate();
-  const start=r.startDate||`${y}-${String(m).padStart(2,"0")}-${String(Math.min(Math.max(+r.day||1,1),ld)).padStart(2,"0")}`;
+  const mk=curMo(),[y,m]=mk.split("-").map(Number);
+  const start=r.startDate||dueDateForMonth(r,mk);
   const sy=+String(start).slice(0,4)||y, sm=+String(start).slice(5,7)||m;
   const diff=(y-sy)*12+(m-sm), interval=recIntervalMonths(r);
   if(diff<0||diff%interval!==0)return null;
-  return `${mk}-${String(Math.min(Math.max(+r.day||+String(start).slice(8,10)||1,1),ld)).padStart(2,"0")}`;
+  const due=dueDateForMonth(r,mk);
+  if(r.endDate&&due>r.endDate)return null;
+  return due;
+};
+const nextRecurringDueDate=(r,from=today(),lookAheadMonths=36)=>{
+  const start=r.startDate||dueDateForMonth(r,monthFromDate(from));
+  let base=new Date(`${String(start).slice(0,7)}-01`);
+  if(Number.isNaN(base.getTime()))base=new Date(`${monthFromDate(from)}-01`);
+  const interval=recIntervalMonths(r);
+  for(let i=0;i<=lookAheadMonths;i++){
+    const d=new Date(base.getFullYear(),base.getMonth()+i,1);
+    const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    const diff=(d.getFullYear()-base.getFullYear())*12+(d.getMonth()-base.getMonth());
+    if(diff<0||diff%interval!==0)continue;
+    const due=dueDateForMonth(r,mk);
+    if(due<start)continue;
+    if(r.endDate&&due>r.endDate)return null;
+    if(due>=from)return due;
+  }
+  return null;
 };
 const recurringState=r=>{
-  const due=recurringDueDate(r);
-  if(!due)return {key:"notdue",label:r.frequency==="yearly"?"Yearly plan":r.frequency==="halfyearly"?"Half-yearly plan":"Not due",tone:C.muted,bg:C.bg,rank:9,due:null,diff:999};
-  const paid=r.lastDone===curMo(),diff=dateDiff(due,today());
-  if(paid)return {key:"paid",label:"Paid",tone:C.income,bg:C.softIncome,rank:4,due,diff};
-  if(diff<0)return {key:"overdue",label:`${Math.abs(diff)}d overdue`,tone:C.expense,bg:C.softExpense,rank:0,due,diff};
+  const due=nextRecurringDueDate(r);
+  if(!due)return {key:"completed",label:"Schedule complete",tone:C.muted,bg:C.bg,rank:9,due:null,diff:999};
+  const paid=r.lastDone===due||r.lastDoneDate===due,diff=dateDiff(due,today());
+  if(paid)return {key:"paid",label:`Paid · ${fmtShortDate(due)}`,tone:C.income,bg:C.softIncome,rank:4,due,diff};
+  if(diff<0)return {key:"overdue",label:`${Math.abs(diff)}d overdue · ${fmtShortDate(due)}`,tone:C.expense,bg:C.softExpense,rank:0,due,diff};
   if(diff===0)return {key:"today",label:"Due today",tone:C.warn,bg:"#FFF8E8",rank:1,due,diff};
-  if(diff<=7)return {key:"soon",label:`In ${diff}d`,tone:C.gold,bg:"#FFF8E8",rank:2,due,diff};
-  return {key:"later",label:r.frequency==="yearly"?"Due this year":r.frequency==="halfyearly"?"Due this half-year":`Day ${r.day}`,tone:C.muted,bg:C.bg,rank:3,due,diff};
+  if(diff<=7)return {key:"soon",label:`In ${diff}d · ${fmtShortDate(due)}`,tone:C.gold,bg:"#FFF8E8",rank:2,due,diff};
+  return {key:"later",label:`${fmtShortDate(due)} · ${policyFrequencyLabel(r.frequency)}`,tone:C.muted,bg:C.bg,rank:3,due,diff};
 };
 const lastBackupLabel=()=>{const d=daysSinceBackup();if(d>=999)return "Never backed up";if(d===0)return "Backed up today";if(d===1)return "Backed up yesterday";return `Last backup: ${d} days ago`;};
 
@@ -304,6 +328,48 @@ function ensureHardcodedLicAccounts(accounts=[]){
   HARDCODED_LIC_ACCOUNTS.forEach(p=>{if(!existing.has(String(p.accountNumber))&&!existing.has(String(p.id))){out.push({...p});existing.add(String(p.accountNumber));existing.add(String(p.id));}});
   return out;
 }
+function policyPremiumEndDate(p){
+  const yrs=+p.premiumPayingTerm||0;
+  const start=p.commencementDate||p.premiumStartDate||"";
+  if(!yrs||!start)return p.maturityDate||"";
+  const d=new Date(start);
+  if(Number.isNaN(d.getTime()))return p.maturityDate||"";
+  d.setFullYear(d.getFullYear()+yrs);
+  return ymd(d);
+}
+function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
+  const accs=accounts?.length?accounts:HARDCODED_LIC_ACCOUNTS;
+  const existing=new Set((recurring||[]).map(r=>String(r.sourcePolicyId||r.linkedAccountId||r.toAccountId||"")+"|"+String(r.name||"")));
+  const out=[...(recurring||[])];
+  accs.filter(isInsuranceAccount).forEach(p=>{
+    if(!p.premiumAmount||!p.premiumStartDate)return;
+    const sourceKey=String(p.id||p.accountNumber||"")+"|"+String(`${p.name} premium`);
+    const already=(out||[]).some(r=>r.sourcePolicyId===p.id||r.linkedAccountId===p.id||r.toAccountId===p.id||(String(r.name||"").includes(p.accountNumber||"__never__")&&String(r.name||"").toLowerCase().includes("premium")));
+    if(already||existing.has(sourceKey))return;
+    const protection=["Term Insurance","Health Insurance"].includes(p.type);
+    out.push({
+      id:`rec-${p.id||uid()}`,
+      name:`${p.name} premium`,
+      type:protection?"expense":"transfer",
+      amount:+p.premiumAmount||0,
+      category:protection?"Health":"Transfer",
+      subcategory:protection?"Insurance Premium":"",
+      accountId:p.payFromId||"",
+      toAccountId:protection?undefined:p.id,
+      linkedAccountId:p.id,
+      sourcePolicyId:p.id,
+      policyNumber:p.accountNumber||"",
+      day:+p.premiumDueDay||+String(p.premiumStartDate).slice(8,10)||1,
+      frequency:p.premiumFrequency||"yearly",
+      startDate:p.premiumStartDate,
+      endDate:policyPremiumEndDate(p),
+      lastDone:"",
+      needsSourceAccount:!p.payFromId,
+      note:"LIC policy premium. Select the paying bank account when recording the payment."
+    });
+  });
+  return out;
+}
 
 const DEFAULT_ACCOUNTS=ensureHardcodedLicAccounts([
   {id:"acc-sib",  name:"South Indian Bank",type:"Bank",  opening:0,hint:"0584"},
@@ -314,19 +380,24 @@ const DEFAULT_ACCOUNTS=ensureHardcodedLicAccounts([
   {id:"acc-loan", name:"SBI Car Loan",       type:"Loan",  loanType:"Car Loan",
    sanctionedAmount:780000,outstandingAmount:576797,opening:0,hint:""},
 ]);
+const DEFAULT_RECURRING=ensureHardcodedLicRecurring([],DEFAULT_ACCOUNTS);
 const EMPTY={
   accounts:DEFAULT_ACCOUNTS,transactions:[],budgets:{},
-  goals:[],recurring:[],customCats:{expense:[],income:[]},budgetOverrides:{},
+  goals:[],recurring:DEFAULT_RECURRING,customCats:{expense:[],income:[]},budgetOverrides:{},
 };
-const normalize=d=>({
-  ...EMPTY,...d,
-  accounts:ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS),
-  transactions:(d.transactions||[]).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t),
-  recurring:(d.recurring||[]).map(r=>r.type==="expense"||r.type==="income"?{...r,category:mainCategory(r.category),subcategory:r.subcategory||""}:r),
-  customCats:{expense:[],income:[],...(d.customCats||{})},
-  budgetOverrides:d.budgetOverrides||{},
-  goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
-});
+const normalize=d=>{
+  const accounts=ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS);
+  const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>r.type==="expense"||r.type==="income"?{...r,category:mainCategory(r.category),subcategory:r.subcategory||""}:r);
+  return {
+    ...EMPTY,...d,
+    accounts,
+    transactions:(d.transactions||[]).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t),
+    recurring,
+    customCats:{expense:[],income:[],...(d.customCats||{})},
+    budgetOverrides:d.budgetOverrides||{},
+    goals:(d.goals||[]).map(g=>({linkType:"none",linkedAccountId:"",investmentType:"Mutual Fund",investmentValue:0,targetDate:"",...g})),
+  };
+};
 
 /* ── AES-256-GCM ─────────────────────────────────────────────────── */
 const _e=new TextEncoder(),_d=new TextDecoder();
@@ -629,7 +700,12 @@ function Main({data,persist,pin}){
   const addCat  =(kind,n)=>persist({...data,customCats:{...data.customCats,[kind]:[...data.customCats[kind],n.trim()]}});
   const addRec  =r=>persist({...data,recurring:[...data.recurring,{...r,id:uid(),lastDone:""}]});
   const delRec  =id=>persist({...data,recurring:data.recurring.filter(r=>r.id!==id)});
-  const markPaid=rec=>{const mk=curMo(),due=recurringDueDate(rec);const date=due||today();const txn={id:uid(),type:rec.type,amount:+rec.amount||0,category:rec.type==="transfer"?"Transfer":rec.category,subcategory:rec.type==="transfer"?"":(rec.subcategory||""),accountId:rec.accountId,toAccountId:rec.type==="transfer"?rec.toAccountId:undefined,date,note:rec.name};persist({...data,transactions:[...data.transactions,txn],recurring:data.recurring.map(r=>r.id===rec.id?{...r,lastDone:mk}:r)});};
+  const markPaid=rec=>{
+    const due=nextRecurringDueDate(rec)||today();
+    if(!rec.accountId){alert("Please edit this recurring item or record the payment manually and choose the paying bank account. The premium reminder will remain visible until then.");return;}
+    const txn={id:uid(),type:rec.type,amount:+rec.amount||0,category:rec.type==="transfer"?"Transfer":rec.category,subcategory:rec.type==="transfer"?"":(rec.subcategory||""),accountId:rec.accountId,toAccountId:rec.type==="transfer"?rec.toAccountId:undefined,date:due,note:rec.name};
+    persist({...data,transactions:[...data.transactions,txn],recurring:data.recurring.map(r=>r.id===rec.id?{...r,lastDone:due,lastDoneDate:due}:r)});
+  };
   const importBatch=txns=>persist({...data,transactions:[...data.transactions,...txns]});
   const restoreData=d=>{persist(d);};
   const exportCSV=()=>{const head="Date,Type,Category,Account,Amount,Note\n";const body=[...data.transactions].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId)?.name||"";const q=s=>`"${String(s||"").replace(/"/g,'""')}"`;return[t.date,t.type,q(t.category),q(acc),t.amount,q(t.note)].join(",");}).join("\n");const url=URL.createObjectURL(new Blob([head+body],{type:"text/csv"}));const a=document.createElement("a");a.href=url;a.download=`moneymate-${today()}.csv`;a.click();URL.revokeObjectURL(url);};
@@ -1248,7 +1324,7 @@ const PlainSmall={border:"none",background:"transparent",color:C.muted,fontSize:
 const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:"11px 10px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer"};
 const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
-function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Planned this month</div>{planned.slice(0,5).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1}}><div style={{fontWeight:700}}>{r.name}</div><div style={{fontSize:13,color:r.status.tone}}>{r.status.label}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={TinyPill}>Paid</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
+function PlannedLite({planned,markPaid,delRec}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Upcoming recurring payments</div>{planned.slice(0,8).map(r=><div key={r.id} style={ListLine}><CatIcon name={r.category}/><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:r.status.tone}}>{r.status.label}{!r.accountId?" · choose bank when paying":""}</div></div><div style={{fontWeight:800,color:r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={{...TinyPill,opacity:r.accountId?1:.68}}>{r.accountId?"Paid":"Reminder"}</button>}<button onClick={()=>delRec(r.id)} style={PlainSmall}>×</button></div>)}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"11px 0 8px",fontSize:15,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{marginRight:6}}>{icon}</span>{label}</button>}
 const AccountRow={display:"flex",alignItems:"stretch",gap:8,border:"none",background:"rgba(255,255,255,.34)",padding:"8px 6px",borderRadius:18,cursor:"pointer",width:"100%",maxWidth:"100%",overflow:"hidden"};
 const AccountSquare={width:52,height:52,borderRadius:14,display:"grid",placeItems:"center",color:"#fff",fontSize:24,flexShrink:0};
