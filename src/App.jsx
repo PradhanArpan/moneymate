@@ -1244,10 +1244,6 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,ccDueAlerts,backupRemind
   return(<div style={FixedScreen}>
     <MoneyHeader netWorth={liquidNetWorth} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
     <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-        <SoftBalance label="Starting balance" value={inr(netWorth-savings)}/>
-        <SoftBalance label="Ending balance" value={inr(netWorth)}/>
-      </div>
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:800}}>Overview</div><div style={{fontSize:22,color:C.muted,fontWeight:800}}>{inr(savings)}</div></div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:18}}>
@@ -1334,8 +1330,8 @@ function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>BANK_TY
 function liquidHeaderValue(data,balances={}){return liquidHeaderAccounts(data).reduce((s,a)=>s+(+balances[a.id]||0),0);}
 function savingsTxnAccounts(data){return liquidHeaderAccounts(data);}
 function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id));}
-function txnAccountOptions(data){return [{id:"all",name:"Savings Accounts + Credit Cards"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
-function txnAccountLabel(data,id){if(!id||id==="all")return "Savings Accounts + Credit Cards";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
+function txnAccountOptions(data){return [{id:"all",name:"Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
+function txnAccountLabel(data,id){if(!id||id==="all")return "Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
 function expenseDebitAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Loan"||a.type==="Credit Card");}
 function incomeCreditAccounts(data){return (data.accounts||[]).filter(a=>a.type!=="Loan"&&a.type!=="Credit Card"&&a.type!=="Goal");}
 function entryAccountOptions(data,tp){
@@ -1627,7 +1623,7 @@ const FooterSecondaryBtn={border:`1px solid ${C.border}`,background:C.card,borde
 const HeaderIconBtn={width:36,height:36,border:"none",background:"transparent",color:"#464650",display:"grid",placeItems:"center",fontSize:21,cursor:"pointer"};
 const HeaderArrow={width:34,height:34,border:"none",background:"transparent",color:"#45454F",cursor:"pointer",lineHeight:1,display:"grid",placeItems:"center",borderRadius:12};
 function HeaderAvatar(){return <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:17,background:"rgba(255,255,255,.35)"}}>👤</div>}
-function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="Savings Accounts + Credit Cards",onAccountClick}){
+function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodModes,accountLabel="Accounts",onAccountClick}){
   const p=period||{kind:"month",month:month||curMo()};
   const hasPeriod=!!(period||month);
   const shift=dir=>setPeriod?setPeriod(shiftPeriod(p,dir)):setMonth&&setMonth(dir>0?nextMo(month):prevMo(month));
@@ -1653,16 +1649,16 @@ function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodMod
 }
 function CategoryActionFooter({setModal}){return <div style={FooterBar}>
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-    <button onClick={()=>setModal("txn",{entryType:"income"})} style={{...FooterActionBtn,background:C.income}}>Income</button>
-    <button onClick={()=>setModal("txn",{entryType:"transfer"})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
-    <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
+    <button onClick={()=>setModal("txn",{entryType:"income",lockedType:true})} style={{...FooterActionBtn,background:C.income}}>Income</button>
+    <button onClick={()=>setModal("txn",{entryType:"transfer",lockedType:true})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
+    <button onClick={()=>setModal("txn",{entryType:"expense",lockedType:true})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
   </div>
 </div>}
 function TransactionActionFooter({setModal,exportCSV,canExport}){return <div style={FooterBar}>
   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
-    <button onClick={()=>setModal("txn",{entryType:"income"})} style={{...FooterActionBtn,background:C.income}}>Income</button>
-    <button onClick={()=>setModal("txn",{entryType:"transfer"})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
-    <button onClick={()=>setModal("txn",{entryType:"expense"})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
+    <button onClick={()=>setModal("txn",{entryType:"income",lockedType:true})} style={{...FooterActionBtn,background:C.income}}>Income</button>
+    <button onClick={()=>setModal("txn",{entryType:"transfer",lockedType:true})} style={{...FooterActionBtn,background:C.xfer}}>Transfer</button>
+    <button onClick={()=>setModal("txn",{entryType:"expense",lockedType:true})} style={{...FooterActionBtn,background:C.expense}}>Expense</button>
   </div>
   <div style={{display:"grid",gridTemplateColumns:canExport?"1fr 1fr":"1fr",gap:8}}>
     <button onClick={()=>setModal("import")} style={FooterSecondaryBtn}>Import PDF</button>
@@ -2068,6 +2064,7 @@ function QuickCashModal({close,data,addTxn,expCats}){
 
 /* Main transaction modal — with split support */
 function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,preset}){
+  const lockedType=!!preset?.lockedType;
   const[tp,setTp]=useState(preset?.entryType||"expense");
   const[amt,setAmt]=useState("");
   const[cat,setCat]=useState(preset?.cat||((preset?.entryType||"expense")==="income"?incCats[0]:expCats[0]));
@@ -2102,8 +2099,9 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
     close();
   };
 
-  return(<Sheet close={close} title="New Entry">
-    {!isSplit&&<div style={{display:"flex",gap:6,marginBottom:14}}>
+  const entryTitle=lockedType?`New ${tp[0].toUpperCase()+tp.slice(1)}`:"New Entry";
+  return(<Sheet close={close} title={entryTitle}>
+    {!lockedType&&!isSplit&&<div style={{display:"flex",gap:6,marginBottom:14}}>
       {["expense","income","transfer"].map(t=><button key={t} onClick={()=>{setTp(t);const nc=t==="income"?incCats[0]:expCats[0];setCat(nc);setSubcat(firstSub(nc,t));}} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
     </div>}
     <L>Total amount (₹)</L>
@@ -2129,7 +2127,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
     <L>Date</L><input style={F} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
     <L>Note (optional)</L><input style={F} value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. groceries"/>
     {!isSplit&&<label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,marginBottom:14,cursor:"pointer"}}><input type="checkbox" checked={rep} onChange={e=>setRep(e.target.checked)} style={{width:16,height:16,accentColor:C.brand}}/>Repeat every month {tp==="transfer"?"(SIP / premium / transfer)":""}</label>}
-    <button onClick={go} style={SB}>{isSplit?`Save ${splits.filter(s=>evalExpr(s.amt)>0).length} entries`:"Save Entry"}</button>
+    <button onClick={go} style={SB}>{isSplit?`Save ${splits.filter(s=>evalExpr(s.amt)>0).length} entries`:`${lockedType?"Save "+tp[0].toUpperCase()+tp.slice(1):"Save Entry"}`}</button>
   </Sheet>);
 }
 
