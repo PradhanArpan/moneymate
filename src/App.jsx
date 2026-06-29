@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v9.9 Fixed Banners + PWA Logo
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.1 Statement Balance Reconciliation
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -543,6 +543,9 @@ const DRE =/\b(\d{1,2})[\/\-.]((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|De
 const DRE2=/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b/i;
 const ARE =/(?:\d{1,3}(?:,\d{2,3})+|\d+)\.\d{2}/g;
 const toISO=(d,m,y)=>{const mm=isNaN(+m)?MONTHS[m.toLowerCase().slice(0,3)]:+m;let yy=+y;if(String(y).length===2)yy+=2000;if(!mm||mm>12||+d>31||yy<2000||yy>2100)return null;return `${yy}-${String(mm).padStart(2,"0")}-${String(d).padStart(2,"0")}`;};
+const parseLooseStatementDate=s=>{const m=String(s||"").match(DRE)||String(s||"").match(DRE2);return m?toISO(m[1],m[2],m[3]):"";};
+const parseMoneyToken=s=>{const raw=String(s||"").replace(/₹|rs\.?|inr/gi,"").replace(/,/g,"").trim();const m=raw.match(/-?\d+(?:\.\d{1,2})?/);return m?Number(m[0]):NaN;};
+const moneyTokens=s=>(String(s||"").match(/-?(?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?/g)||[]).map(parseMoneyToken).filter(Number.isFinite);
 const CCAT=[[/swiggy|zomato|dominos|mcdonald|kfc|restaurant|cafe|thalassery|jalpan|food/i,"Food"],[/blinkit|zepto|bigbasket|grofers|dmart|grocery|kirana/i,"Groceries"],[/uber|ola|rapido|irctc|metro|petrol|hpcl|iocl|bpcl|fastag|toll/i,"Transport"],[/rent\b|landlord|pg\b/i,"Rent"],[/electricity|bescom|tneb|jio|airtel|broadband|dth|gas bill/i,"Utilities"],[/amazon|flipkart|myntra|ajio|nykaa|meesho/i,"Shopping"],[/pharmacy|apollo|medplus|hospital|clinic|1mg/i,"Health"],[/netflix|spotify|hotstar|bookmyshow|prime|pvr/i,"Entertainment"],[/\bemi\b|loan emi|car loan|home loan/i,"EMI"],[/school|college|udemy|tuition|byjus/i,"Education"],[/indstocks|iccl|zerodha|groww|upstox|indmoney|indianesign/i,"Other"]];
 const ICAT=[[/salary|sal cr|payroll/i,"Salary"],[/interest|int cr|int pd/i,"Interest"],[/dividend/i,"Interest"],[/refund|cashback|reversal/i,"Other"]];
 const guessCat=(d,t)=>{const r=t==="income"?ICAT:CCAT;for(const[re,c]of r)if(re.test(d))return c;return "Other";};
@@ -611,9 +614,10 @@ function detectStatementProfile(lines=[],fileName=""){
   const bank=/kotak mahindra|KKBK0|\bkotak\b/i.test(all)?"Kotak":/hdfc bank|HDFC000|Statement of account|\bhdfc\b/i.test(all)?"HDFC":/state bank of india|SBIN0|\bsbi\b/i.test(all)?"SBI":/south indian bank|SIBL0|\bsib\b/i.test(all)?"South Indian Bank":"Unknown bank";
   const acct=(all.match(/Account\s*(?:No|Number|#)\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||all.match(/A\/c\s*No\.?\s*[:#]?\s*([0-9Xx*\- ]{4,24})/i)||[])[1]||"";
   const last4=(acct.replace(/\D/g,"").slice(-4))||"";
-  const from=(all.match(/Statement\s+From\s*[:]?\s*([0-9\/\-]{8,10})/i)||all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/)||[])[1]||"";
-  const to=(all.match(/\bTo\s*[:]?\s*([0-9\/\-]{8,10})/i)||all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/)||[])[2]||"";
-  return {bank,accountLast4:last4,period:from&&to?`${from} → ${to}`:""};
+  const range=all.match(/(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})\s*-\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})/);
+  const from=(all.match(/Statement\s+From\s*[:]?\s*([0-9\/\-]{8,10})/i)||range||[])[1]||"";
+  const to=(all.match(/\bTo\s*[:]?\s*([0-9\/\-]{8,10})/i)||range||[])[2]||"";
+  return {bank,accountLast4:last4,period:from&&to?`${from} → ${to}`:"",fromDate:parseLooseStatementDate(from),toDate:parseLooseStatementDate(to)};
 }
 function guessPdfPasswordFromName(name=""){
   const base=String(name).replace(/\.pdf$/i,"").trim();
@@ -709,6 +713,55 @@ function balanceAuditRows(rows=[]){
   };
   const rev=score(true),fwd=score(false);const best=rev.issues<=fwd.issues?{...rev,mode:"reverse"}:{...fwd,mode:"forward"};return best;
 }
+function statementClosingCandidate(rows=[],rawLines=[],profile={}){
+  const explicit=[...rawLines].reverse().map(l=>String(l||""))
+    .find(l=>/closing\s+(balance|bal)|balance\s+as\s+on|available\s+balance/i.test(l)&&moneyTokens(l).length);
+  const explicitAmt=explicit?moneyTokens(explicit).slice(-1)[0]:NaN;
+  const balRows=rows.map((r,i)=>({...r,_i:i,balance:+r.balance})).filter(r=>Number.isFinite(r.balance));
+  let chosen=null;
+  if(balRows.length){
+    const sorted=[...balRows].sort((a,b)=>a.date===b.date?a._i-b._i:a.date.localeCompare(b.date));
+    chosen=sorted[sorted.length-1];
+  }
+  const date=profile?.toDate||chosen?.date||rows.map(r=>r.date).filter(Boolean).sort().slice(-1)[0]||"";
+  const balance=Number.isFinite(explicitAmt)?explicitAmt:(Number.isFinite(chosen?.balance)?chosen.balance:NaN);
+  return Number.isFinite(balance)&&date?{date,balance,source:Number.isFinite(explicitAmt)?"statement closing line":"last parsed balance row"}:null;
+}
+function baseBalanceForAccount(a){
+  if(!a)return 0;
+  if(a.type==="Loan")return -(+a.outstandingAmount||0);
+  if(a.type==="Credit Card")return -(+a.currentOutstanding||0);
+  if(a.type==="Lended")return a.lendDirection==="from"?-Math.abs(+a.opening||0):Math.abs(+a.opening||0);
+  if(a.type==="Goal")return 0;
+  return +a.opening||0;
+}
+function txEffectForAccount(t,accId){
+  const amt=+t.amount||0;if(!t||!accId||!amt)return 0;
+  if(t.type==="income"&&t.accountId===accId)return amt;
+  if(t.type==="expense"&&t.accountId===accId)return -amt;
+  if(t.type==="transfer"){
+    let d=0;if(t.accountId===accId)d-=amt;if(t.toAccountId===accId)d+=amt;return d;
+  }
+  return 0;
+}
+function accountBalanceOnDate(data,accId,date,extraTxns=[]){
+  const acc=(data.accounts||[]).find(a=>a.id===accId);if(!acc||!date)return 0;
+  const all=[...(data.transactions||[]),...(extraTxns||[])];
+  return all.filter(t=>t.date&&t.date<=date).reduce((s,t)=>s+txEffectForAccount(t,accId),baseBalanceForAccount(acc));
+}
+function importRowsToTxns(rows=[],accId){
+  return rows.filter(r=>r.include).map(r=>({id:r.key||uid(),type:r.type,amount:+r.amount||0,category:r.type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.type==="transfer"?"":(r.subcategory||firstSub(r.category,r.type)),accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"statement-preview"}));
+}
+function statementReconciliation(data,accId,rows=[],closing=null,carryover=null,extraOverride=null){
+  if(!closing||!Number.isFinite(+closing.balance)||!closing.date)return null;
+  const carry=carryover&&carryover.enabled&&+carryover.amount>0?[{id:"carryover-preview",type:"income",amount:+carryover.amount,category:"Other Income",subcategory:"Adjustment",accountId:accId,date:carryover.date,note:"Opening balance carryover",source:"carryover-preview"}]:[];
+  const extra=extraOverride||[...carry,...importRowsToTxns(rows,accId)];
+  const projected=accountBalanceOnDate(data,accId,closing.date,extra);
+  const diff=projected-(+closing.balance||0);
+  const ok=Math.abs(diff)<=1;
+  return {ok,date:closing.date,statementBalance:+closing.balance,projectedBalance:projected,difference:diff,source:closing.source||"statement",extraCount:extra.length};
+}
+
 function extractStatementSerials(lines=[]){
   const nums=[];
   lines.forEach(l=>{const m=String(l||"").match(/^\s*(\d{1,4})\s+(?:(\d{1,2})[\/\-.]|(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))/i);if(m)nums.push(+m[1]);});
@@ -2258,7 +2311,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
   const[step,setStep]=useState("pick");const[file,setFile]=useState(null);const[pwd,setPwd]=useState("");const[needPwd,setNP]=useState(false);
   const[accId,setAId]=useState(data.accounts.filter(a=>a.type!=="Loan")[0]?.id||"");
   const[rows,setRows]=useState([]);const[err,setErr]=useState("");const[res,setRes]=useState(null);const[profile,setProfile]=useState(null);const[summary,setSummary]=useState(null);
-  const[importReport,setImportReport]=useState(null);
+  const[importReport,setImportReport]=useState(null);const[finalRecon,setFinalRecon]=useState(null);
   const[skipped,setSkipped]=useState([]);const[showSkipped,setShowSkipped]=useState(false);
   const[carryoverDate,setCOD]=useState("");const[carryoverAmt,setCOA]=useState("");const[showCarryover,setSC]=useState(false);
   const nonLoan=data.accounts.filter(a=>a.type!=="Loan");
@@ -2284,6 +2337,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       const targetAcc=hit?.id||accId;
       const serialStats=extractStatementSerials(lines);
       const audit=balanceAuditRows(parsed);
+      const closing=statementClosingCandidate(parsed,rawLines,prof);
       const existingKeys=new Set(data.transactions.map(t=>importDupKey(t.accountId,{...t,desc:t.note})));
       const preparedRows=parsed.map((r,idx)=>{const type=r.isXfer?"transfer":r.type;const pair=findTransferPair({...r,type},targetAcc,data);return {...r,type,rawType:r.type,category:type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.subcategory||firstSub(mainCategory(r.category),type),duplicate:existingKeys.has(importDupKey(targetAcc,{...r,type})),balanceIssue:audit.bad?.has(idx),transferPair:pair?{accountId:pair.accountId,date:pair.date,amount:pair.amount,level:"opposite",reason:"Matching opposite entry found in another account"}:null};});
       const withXfer=verifyImportRows(preparedRows,targetAcc,data);
@@ -2291,7 +2345,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       const skippedRows=skippedLineCandidates(lines,withXfer);
       const fp=statementFingerprint(prof,sum,file.name);
       const duplicateStatement=getStatementFps().includes(fp);
-      setImportReport({pagesRead:pagesTotal,pagesTotal,rawLineCount,mergedLineCount:lines.length,readMode,serialStats,balanceChecked:audit.checked,balanceIssues:audit.issues,balanceMode:audit.mode,skippedRows,fingerprint:fp,duplicateStatement});
+      setImportReport({pagesRead:pagesTotal,pagesTotal,rawLineCount,mergedLineCount:lines.length,readMode,serialStats,balanceChecked:audit.checked,balanceIssues:audit.issues,balanceMode:audit.mode,skippedRows,fingerprint:fp,duplicateStatement,statementClosing:closing});
       setRows(withXfer);setSummary(sum);
       const hasExisting=data.transactions.some(t=>t.accountId===targetAcc);
       if(!hasExisting&&withXfer.length>0){const sorted=[...withXfer].sort((a,b)=>a.date.localeCompare(b.date));setCOD(prevDay(sorted[0].date));setSC(true);setStep("carryover");}
@@ -2304,13 +2358,15 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
     const fresh=[],skip=[];
     if(showCarryover&&carryoverAmt&&+carryoverAmt>0)fresh.push({id:uid(),type:"income",amount:+carryoverAmt,category:"Other Income",subcategory:"Adjustment",accountId:accId,date:carryoverDate,note:"Opening balance carryover",source:"carryover"});
     verified.filter(r=>r.include).forEach(r=>{const k=importDupKey(accId,r);const liveDup=findImportDuplicateMatch(r,accId,data)||r.transferAlreadyRecorded;if(ex.has(k)||liveDup){skip.push({...r,reason:liveDup?.reason||"Duplicate detected at final check"});return;}ex.add(k);fresh.push({id:uid(),type:r.type,amount:r.amount,category:r.type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.type==="transfer"?"":(r.subcategory||firstSub(r.category,r.type)),accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"import",recurring:!!r.recurMatch});});
-    importBatch(fresh);if(importReport?.fingerprint)saveStatementFp(importReport.fingerprint);setSkipped([...(importReport?.skippedRows||[]),...skip]);setRes({added:fresh.length-(showCarryover&&carryoverAmt&&+carryoverAmt>0?1:0),skipped:skip.length+verified.filter(r=>!r.include&&(r.duplicate||r.transferAlreadyRecorded||r.possibleDuplicate)).length+(importReport?.skippedRows?.length||0),carryover:showCarryover&&+carryoverAmt>0});setStep("done");
+    const recon=statementReconciliation(data,accId,[],importReport?.statementClosing,null,fresh);setFinalRecon(recon);
+    importBatch(fresh);if(importReport?.fingerprint)saveStatementFp(importReport.fingerprint);setSkipped([...(importReport?.skippedRows||[]),...skip]);setRes({added:fresh.length-(showCarryover&&carryoverAmt&&+carryoverAmt>0?1:0),skipped:skip.length+verified.filter(r=>!r.include&&(r.duplicate||r.transferAlreadyRecorded||r.possibleDuplicate)).length+(importReport?.skippedRows?.length||0),carryover:showCarryover&&+carryoverAmt>0,reconciliation:recon});setStep("done");
   };
   const toggle=k=>setRows(rows.map(r=>r.key===k?{...r,include:!r.include}:r));
   const setType=k=>t=>setRows(verifyImportRows(rows.map(r=>{if(r.key!==k)return r;return {...r,type:t,category:t==="transfer"?"Transfer":(t==="income"?"Salary":"Other"),subcategory:t==="transfer"?"":firstSub(t==="income"?"Salary":"Other",t)};}),accId,data));
   const setCat=k=>c=>setRows(rows.map(r=>{if(r.key!==k)return r;const nr={...r,category:c,subcategory:firstSub(c,r.type)};return {...nr,confidence:rowConfidence(nr)};}));
   const setXferTo=k=>id=>setRows(verifyImportRows(rows.map(r=>r.key===k?{...r,xferToId:id}:r),accId,data));
   const included=rows.filter(r=>r.include).length;
+  const liveRecon=statementReconciliation(data,accId,rows,importReport?.statementClosing,{enabled:showCarryover,amount:carryoverAmt,date:carryoverDate});
 
   return(<Sheet close={close} title="Import Statement">
     {step==="pick"&&<>
@@ -2347,6 +2403,7 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
           <div><b style={{color:C.ink}}>Pages:</b> {importReport?`${importReport.pagesRead}/${importReport.pagesTotal}`:"—"}</div>
           <div><b style={{color:C.ink}}>Mode:</b> {importReport?.readMode||profile?.mode||"PDF text"}</div>
           <div><b style={{color:C.ink}}>Balance:</b> {importReport?`${importReport.balanceIssues||0}/${importReport.balanceChecked||0} issues`:"—"}</div>
+          <div><b style={{color:C.ink}}>Closing:</b> {liveRecon?(liveRecon.ok?"Matched":"Mismatch"):"—"}</div>
           <div><b style={{color:C.ink}}>Skipped:</b> {importReport?.skippedRows?.length||0}</div>
         </div>
         {profile?.period&&<div style={{fontSize:11,color:C.muted,marginTop:6}}>Period: {profile.period}</div>}
@@ -2355,6 +2412,16 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
         {profile?.mode&&<div style={{fontSize:11,color:C.warn,marginTop:6}}>Read mode: {profile.mode} — review carefully before import.</div>}
         <div style={{fontSize:11,color:C.muted,marginTop:6}}>Verification: exact duplicates, possible duplicates, already-recorded transfers and balance-problem rows are unticked automatically. Tick only after checking.</div>
       </div>
+      {liveRecon&&<div style={{background:liveRecon.ok?C.softIncome:C.softExpense,border:`1px solid ${liveRecon.ok?C.income:C.expense}`,borderRadius:14,padding:12,marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:950,color:liveRecon.ok?C.income:C.expense,marginBottom:6}}>Statement balance reconciliation: {liveRecon.ok?"Matched":"Mismatch"}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:11,color:C.muted}}>
+          <div><b style={{color:C.ink}}>Statement closing</b><br/>{inr(liveRecon.statementBalance)}</div>
+          <div><b style={{color:C.ink}}>App after import</b><br/>{inr(liveRecon.projectedBalance)}</div>
+          <div><b style={{color:C.ink}}>Date</b><br/>{liveRecon.date}</div>
+          <div><b style={{color:C.ink}}>Difference</b><br/>{inr(liveRecon.difference)}</div>
+        </div>
+        {!liveRecon.ok&&<div style={{fontSize:11,color:C.expense,fontWeight:850,marginTop:7}}>This means one or more rows may still be missing, duplicated, wrongly marked as transfer, or excluded. Review before importing.</div>}
+      </div>}
       <L>Account</L><select style={F} value={accId} onChange={e=>{const id=e.target.value;setAId(id);const refreshed=verifyImportRows(rows,id,data);setRows(refreshed);setSummary(summarizeImportRows(refreshed));}}>{nonLoan.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
       <div style={{display:"grid",gap:8,maxHeight:"44vh",overflowY:"auto"}}>
         {rows.map(r=>(<div key={r.key} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 12px",opacity:r.include?1:0.4}}>
@@ -2385,6 +2452,10 @@ function ImportModal({close,data,importBatch,expCats,incCats}){
       <div style={{fontSize:44,marginBottom:12}}>✅</div>
       {res.carryover&&<div style={{background:C.brandDim,border:`1px solid ${C.brand}`,borderRadius:10,padding:10,marginBottom:12,fontSize:13,color:C.brand}}>Opening balance carryover added ✓</div>}
       <div style={{fontSize:16,fontWeight:700,color:C.ink}}>{res.added} transaction{res.added===1?"":"s"} imported</div>
+      {(res.reconciliation||finalRecon)&&<div style={{margin:"12px 0",background:(res.reconciliation||finalRecon).ok?C.softIncome:C.softExpense,border:`1px solid ${(res.reconciliation||finalRecon).ok?C.income:C.expense}`,borderRadius:12,padding:10,fontSize:12,color:C.ink,textAlign:"left"}}>
+        <b style={{color:(res.reconciliation||finalRecon).ok?C.income:C.expense}}>Closing balance {(res.reconciliation||finalRecon).ok?"matched":"mismatch"}</b><br/>
+        Statement: {inr((res.reconciliation||finalRecon).statementBalance)} · App: {inr((res.reconciliation||finalRecon).projectedBalance)} · Difference: {inr((res.reconciliation||finalRecon).difference)}
+      </div>}
       {res.skipped>0&&<div style={{fontSize:13,color:C.muted,marginTop:6}}>{res.skipped} duplicate{res.skipped===1?"":"s"} skipped</div>}
       {skipped.length>0&&<button onClick={()=>setShowSkipped(!showSkipped)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 14px",fontSize:12,color:C.muted,cursor:"pointer",marginTop:8}}>{showSkipped?"Hide":"View"} skipped</button>}
       {showSkipped&&<div style={{textAlign:"left",marginTop:10,display:"grid",gap:6,maxHeight:"25vh",overflowY:"auto"}}>{skipped.map((r,i)=><div key={i} style={{background:C.bg,borderRadius:8,padding:"8px 10px",fontSize:11}}><div style={{fontWeight:700,color:C.muted}}>{r.desc||r.line||"Skipped row"}</div><div style={{color:C.muted}}>{r.reason?`${r.reason} · `:""}{r.date||""}{r.amount?` · ${inr(r.amount)}`:""}</div></div>)}</div>}
