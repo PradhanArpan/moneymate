@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.4 Insurance Premium Schedule
+   MONEYMATE  ·  Smart Money Tracker  ·  v10.5 Manual Recurring Premiums
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -306,10 +306,12 @@ const recurringTxnExists=(txns=[],r,due)=>{
     if(t.recurringId===r.id&&t.recurringDate===due)return true;
     if(t.date!==due||String(t.type)!==String(r.type))return false;
     if(amountKey(t.amount)!==amt)return false;
-    if(String(t.accountId||"")!==String(r.accountId||""))return false;
-    if(String(t.toAccountId||"")!==String(r.type==="transfer"?(r.toAccountId||""):""))return false;
+    if(r.accountId&&String(t.accountId||"")!==String(r.accountId||""))return false;
+    if(r.type==="transfer"&&r.toAccountId&&String(t.toAccountId||"")!==String(r.toAccountId||""))return false;
+    if(r.type!=="transfer"&&r.accountId&&String(t.accountId||"")!==String(r.accountId||""))return false;
     const tn=String(t.note||"").trim().toLowerCase(), rn=String(r.name||"").trim().toLowerCase();
-    return !rn || !tn || tn===rn || tn.includes(rn) || rn.includes(tn);
+    const catOk=r.type==="transfer"||!r.category||mainCategory(t.category)===mainCategory(r.category)||String(t.category||"").toLowerCase().includes(String(r.subcategory||"").toLowerCase());
+    return catOk&&(!rn || !tn || tn===rn || tn.includes(rn) || rn.includes(tn) || rn.includes("premium")&&tn.includes("premium"));
   });
 };
 const recurringTxnObject=(r,due,planned=true)=>({
@@ -449,6 +451,8 @@ const HARDCODED_LIC_ACCOUNTS=[
   {id:"lic-846654193",name:"New Money Back Plan - 25 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"846654193",hint:"4193",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:200000,policyTerm:25,premiumPayingTerm:20,commencementDate:"2017-03-18",maturityDate:"2042-03-18",nextPayoutDate:"2042-03-18",premiumAmount:5934,premiumFrequency:"halfyearly",premiumDueDay:18,premiumStartDate:"2026-09-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:230,riderSumAssured:200000,linkedBankAccountNumber:"ending 1924",bankName:"KOTAK MAHINDRA BANK LIMITED",bankBranch:"ROURKELA"},
   {id:"lic-596951289",name:"New Money Back Plan - 20 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596951289",hint:"1289",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:15,commencementDate:"2015-09-28",maturityDate:"2035-09-28",nextPayoutDate:"2035-09-28",premiumAmount:3938,premiumFrequency:"halfyearly",premiumDueDay:28,premiumStartDate:"2026-09-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:120,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
   {id:"lic-596600835",name:"New Jeevan Anand",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596600835",hint:"0835",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:20,commencementDate:"2014-07-17",maturityDate:"2034-07-17",nextPayoutDate:"",premiumAmount:5804,premiumFrequency:"yearly",premiumDueDay:17,premiumStartDate:"2026-07-17",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:100,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
+  {id:"hdfclife-sanchay-22258767",name:"HDFC Life Sanchay Plus",type:"Life Insurance",logoKey:"hdfclifeplus",opening:0,accountNumber:"22258767",hint:"8767",status:"Active",policyType:"Life Insurance",planType:"Sanchay Plus - Guaranteed Income",lifeInsured:"Arpan Pradhan",nomineeName:"Sudatta Mohanty",sumAssured:741600,sumAssuredOnDeath:741600,guaranteedSumAssuredOnMaturity:710114,policyTerm:11,premiumPayingTerm:10,commencementDate:"2020-01-29",issueDate:"2020-01-31",maturityDate:"2031-01-29",nextPayoutDate:"2031-01-29",premiumAmount:5000,annualizedPremium:57142.86,premiumFrequency:"monthly",premiumDueDay:29,premiumStartDate:"2026-06-29",premiumEndDate:"2029-12-29",finalPremiumDueDate:"2029-12-29",autoPayStatus:"Unknown",maturityAmount:710114,guaranteedIncomeOnMaturity:110651,payoutPeriod:"10 years starting from year 12",incomePayoutFrequency:"Annually",riderName:"",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 31/01/2020; premium due monthly on 29th; final premium due 29/12/2029."},
+  {id:"hdfclife-click2wealth-21539805",name:"HDFC Life Click 2 Wealth",type:"Life Insurance",logoKey:"hdfclifeplus",opening:0,accountNumber:"21539805",hint:"9805",status:"Active",policyType:"Life Insurance",planType:"Click 2 Wealth - Invest Plus Option",lifeInsured:"Arpan Pradhan",nomineeName:"Sudatta Mohanty",sumAssured:600000,policyTerm:15,premiumPayingTerm:5,commencementDate:"2019-06-04",issueDate:"2019-06-04",maturityDate:"2034-06-04",nextPayoutDate:"",premiumAmount:5000,annualizedPremium:60000,premiumFrequency:"monthly",premiumDueDay:4,premiumStartDate:"2019-07-04",premiumEndDate:"2024-05-04",finalPremiumDueDate:"2024-05-04",autoPayStatus:"Unknown",maturityAmount:0,riderName:"ULIP funds: Diversified Equity 40%, Equity Advantage 40%, Opportunities 20%",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 04/06/2019; premium paying term 5 years; final premium due 04/05/2024; maturity 04/06/2034."},
 ];
 const HARDCODED_HEALTH_INSURANCE_ACCOUNTS=[
   {id:"health-hdfcergo-2856205316603901000",name:"HDFC ERGO Optima Secure",type:"Health Insurance",logoKey:"hdfcergo",opening:0,accountNumber:"2856205316603901000",hint:"1000",status:"Active",policyType:"Health Insurance",planType:"my:Optima Secure",lifeInsured:"Arpan Pradhan; Joice Das",nomineeName:"Sudatta Mohanty",sumAssured:2500000,policyTerm:3,premiumPayingTerm:0,commencementDate:"2026-03-19",maturityDate:"2029-03-18",nextPayoutDate:"",premiumAmount:68361,premiumFrequency:"once",premiumDueDay:18,premiumStartDate:"2029-03-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Family Floater; Plus Benefit; Secure Benefit; Automatic Restore; Optima Wellbeing",riderPremium:0,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 20/02/2026; premium paid 20/02/2026; policy period 19/03/2026 to 18/03/2029",policyCategory:"Family Floater",policyUIN:"HDFHLIP25041V062425",premiumReceiptNo:"3822602127753",coverageNotes:"Base health cover ₹25,00,000; Plus Benefit ₹5,00,000; Emergency Air Ambulance up to ₹5,00,000; Preventive Health Check-up floater ₹10,000; insured persons: Arpan Pradhan and Joice Das."},
@@ -475,12 +479,17 @@ function ensureHardcodedHealthInsuranceAccounts(accounts=[]){
   return out;
 }
 function ensureHardcodedLicAccounts(accounts=[]){
-  const existing=new Set((accounts||[]).map(a=>String(a.accountNumber||a.id||"")));
   const out=[...(accounts||[])];
-  HARDCODED_LIC_ACCOUNTS.forEach(p=>{if(!existing.has(String(p.accountNumber))&&!existing.has(String(p.id))){out.push({...p});existing.add(String(p.accountNumber));existing.add(String(p.id));}});
+  HARDCODED_LIC_ACCOUNTS.forEach(p=>{
+    const idx=out.findIndex(a=>String(a.accountNumber||"")===String(p.accountNumber)||String(a.id||"")===String(p.id));
+    if(idx>=0)out[idx]=mergeAccountDefaults(out[idx],p);
+    else out.push({...p});
+  });
   return out;
 }
 function policyPremiumEndDate(p){
+  if(p.premiumEndDate)return p.premiumEndDate;
+  if(p.finalPremiumDueDate)return p.finalPremiumDueDate;
   const yrs=+p.premiumPayingTerm||0;
   const start=p.commencementDate||p.premiumStartDate||"";
   if(!yrs||!start)return p.maturityDate||"";
@@ -515,20 +524,23 @@ function insurancePremiumRecurringFromPolicy(p){
     lastDoneDate:"",
     skipDates:[],
     needsSourceAccount:!p.payFromId,
-    autoPostOnDue:true,
-    plannedOnlyBeforeDue:true,
-    note:"Insurance policy premium. Future occurrences stay grey/scheduled and do not affect balances until the due date. Select the paying bank account when recording/payment is due."
+    autoPostOnDue:false,
+    manualOnly:true,
+    plannedOnly:true,
+    note:"Insurance policy premium reminder only. It stays grey/scheduled on the transaction date and never affects balances until you manually record the actual transaction."
   };
 }
 function isSamePolicyRecurring(r,p){
   const pid=String(p.id||""), pno=String(p.accountNumber||"");
   if(!r||!p)return false;
+  if(r.userManaged||r.sourceSplitFrom||r.sourceOneOffFrom)return false;
   if(pid&&(String(r.sourcePolicyId||"")===pid||String(r.linkedAccountId||"")===pid||String(r.toAccountId||"")===pid))return true;
   if(pno&&(String(r.policyNumber||"")===pno||String(r.name||"").includes(pno)))return true;
   const rn=String(r.name||"").trim().toLowerCase(), pn=String(p.name||"").trim().toLowerCase();
   return !!pn && rn===`${pn} premium`;
 }
 function mergePolicyRecurring(existing,canonical){
+  const deletedFuture=existing.userEndDate||((existing.endDate||"")&&canonical.endDate&&(existing.endDate<canonical.endDate));
   return {
     ...existing,
     name:existing.name||canonical.name,
@@ -544,12 +556,17 @@ function mergePolicyRecurring(existing,canonical){
     day:canonical.day,
     frequency:canonical.frequency,
     startDate:canonical.startDate,
-    endDate:canonical.endDate,
+    endDate:deletedFuture?existing.endDate:canonical.endDate,
+    userEndDate:deletedFuture?true:existing.userEndDate,
     skipDates:existing.skipDates||[],
-    autoPostOnDue:true,
-    plannedOnlyBeforeDue:true,
+    lastDone:"",
+    lastDoneDate:"",
+    autoPostOnDue:false,
+    manualOnly:true,
+    plannedOnly:true,
+    plannedOnlyBeforeDue:false,
     needsSourceAccount:!(existing.accountId||canonical.accountId),
-    note:existing.note||canonical.note
+    note:canonical.note||existing.note
   };
 }
 function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
@@ -587,11 +604,12 @@ const EMPTY={
 };
 const normalize=d=>{
   const accounts=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts(d.accounts?.length?d.accounts:DEFAULT_ACCOUNTS));
-  const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r};return base.type==="expense"||base.type==="income"?{...base,category:mainCategory(base.category),subcategory:base.subcategory||""}:base;});
+  const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r,lastDone:"",lastDoneDate:"",autoPostOnDue:false,manualOnly:true};return base.type==="expense"||base.type==="income"?{...base,category:mainCategory(base.category),subcategory:base.subcategory||""}:base;});
+  const cleanedTransactions=(d.transactions||[]).filter(t=>!(t.recurringId||t.recurringDate||t.source==="recurring-auto")).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t);
   return {
     ...EMPTY,...d,
     accounts,
-    transactions:(d.transactions||[]).map(t=>t.type==="expense"||t.type==="income"?{...t,category:mainCategory(t.category),subcategory:t.subcategory||""}:t),
+    transactions:cleanedTransactions,
     recurring,
     customCats:{expense:[],income:[],...(d.customCats||{})},
     budgetOverrides:d.budgetOverrides||{},
@@ -1061,17 +1079,17 @@ function Main({data,persist,pin}){
     persist({...data,budgets:b,budgetOverrides:ov});
   };
   const addCat  =(kind,n)=>persist({...data,customCats:{...data.customCats,[kind]:[...data.customCats[kind],n.trim()]}});
-  const addRec  =r=>persist({...data,recurring:[...data.recurring,{...r,id:uid(),lastDone:"",skipDates:r.skipDates||[]}]});
+  const addRec  =r=>persist({...data,recurring:[...data.recurring,{...r,id:uid(),lastDone:"",lastDoneDate:"",skipDates:r.skipDates||[],autoPostOnDue:false,manualOnly:true}]});
   const delRec  =id=>persist({...data,recurring:data.recurring.filter(r=>r.id!==id)});
   const skipRecOccurrence=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])]}:r)});
-  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due)}:r)});
+  const deleteRecFuture=(id,due)=>persist({...data,recurring:data.recurring.map(r=>r.id===id?{...r,endDate:prevDay(due),userEndDate:true,lastDone:"",lastDoneDate:""}:r)});
   const editRecOccurrence=(rec,due,ch,scope)=>{
     if(scope==="future"){
-      const newRec={...rec,...ch,id:uid(),startDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceSplitFrom:rec.id};
-      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due)}:r).concat(newRec)});
+      const newRec={...rec,...ch,id:uid(),startDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceSplitFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
+      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,endDate:prevDay(due),userEndDate:true,lastDone:"",lastDoneDate:""}:r).concat(newRec)});
     }else{
-      const one={...rec,...ch,id:uid(),frequency:"once",startDate:due,endDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceOneOffFrom:rec.id};
-      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])]}:r).concat(one)});
+      const one={...rec,...ch,id:uid(),frequency:"once",startDate:due,endDate:due,day:+due.slice(8,10)||rec.day,lastDone:"",lastDoneDate:"",skipDates:[],sourceOneOffFrom:rec.id,userManaged:true,autoPostOnDue:false,manualOnly:true};
+      persist({...data,recurring:data.recurring.map(r=>r.id===rec.id?{...r,skipDates:[...new Set([...(r.skipDates||[]),due])],lastDone:"",lastDoneDate:""}:r).concat(one)});
     }
   };
   const markPaid=rec=>{
@@ -1104,7 +1122,7 @@ function Main({data,persist,pin}){
   const netWorth=data.accounts.reduce((s,a)=>s+netWorthAccountValue(a,balances[a.id]||0),0);
   const ccDueAlerts=useMemo(()=>{const todayNum=new Date().getDate();return data.accounts.filter(a=>a.type==="Credit Card"&&a.dueDay).map(a=>{const due=a.dueDay,diff=due>=todayNum?due-todayNum:30-todayNum+due;return diff<=7?{...a,daysLeft:diff}:null;}).filter(Boolean);},[data]);
   const backupReminder=daysSinceBackup()>30;
-  useEffect(()=>{const next=materializeDueRecurring(data);if(next!==data)persist(next);},[]);
+  // Recurring items are reminders only. They are never auto-posted as paid transactions.
 
   const TABS=[
     {id:"accounts",Icon:Wallet,label:"Accounts"},
@@ -1170,7 +1188,6 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
   const savings=income-expense;
-  const planned=data.recurring.map(r=>({...r,status:recurringState(r)})).sort((a,b)=>a.status.rank-b.status.rank||a.status.diff-b.status.diff||a.name.localeCompare(b.name));
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
   const trendData=useMemo(()=>{
@@ -1240,7 +1257,6 @@ function HomeTab({data,balances,netWorth,ccDueAlerts,backupReminder,setModal,mar
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:13}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={TinyPill}>Backup</button></div>}
         {ccDueAlerts.map(cc=><div key={cc.id} style={NoticeRow}><span>💳</span><div style={{flex:1}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:13}}>{cc.daysLeft===0?"Due today":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div><button onClick={()=>setModal("paycc",{cc})} style={TinyPill}>Pay</button></div>)}
       </div>}
-      <PlannedLite planned={planned} markPaid={markPaid} delRec={delRec} setModal={setModal}/>
     </div>
   </div>);
 }
@@ -1288,7 +1304,7 @@ function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id
 function txnAccountOptions(data){return [{id:"all",name:"All Savings Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Savings Account"}))];}
 function txnAccountLabel(data,id){if(!id||id==="all")return "All Savings Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
 function nextTxnAccountId(data,current){const opts=txnAccountOptions(data);const i=Math.max(0,opts.findIndex(o=>o.id===current));return opts[(i+1)%opts.length]?.id||"all";}
-function txnMatchesAccount(t,id,data){if(!id||id==="all"){const ids=savingsTxnIds(data);return ids.has(t.accountId)||ids.has(t.toAccountId);}return t.accountId===id||t.toAccountId===id;}
+function txnMatchesAccount(t,id,data){if(t?._planned&&(!id||id==="all"))return true;if(!id||id==="all"){const ids=savingsTxnIds(data);return ids.has(t.accountId)||ids.has(t.toAccountId);}return t.accountId===id||t.toAccountId===id;}
 function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){const ids=savingsTxnIds(data);let v=0;if(t.type==="income"&&ids.has(t.accountId))v+=amt;if(t.type==="expense"&&ids.has(t.accountId))v-=amt;if(t.type==="transfer"){if(ids.has(t.accountId))v-=amt;if(ids.has(t.toAccountId))v+=amt;}return v;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1320,7 +1336,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth}){
         <MiniCatIcon name={t.category} index={0}/>
         <div style={{minWidth:0,overflow:"hidden"}}>
           <div style={{fontSize:10.8,fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.05}}>{t._planned?"Scheduled · ":""}{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div>
-          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · not processed yet":""}</div>
+          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · scheduled only · not paid":""}</div>
         </div>
         <div style={{fontSize:10.8,fontWeight:950,color:t._planned?C.muted:(isPositive?C.income:isNegative?C.expense:C.xfer),whiteSpace:"nowrap",textAlign:"right"}}>{isPositive?"+":isNegative?"−":""}{inr(t.amount)}</div>
         <button onClick={()=>t._planned&&rec?setModal("editrec",{rec,due:t.date}):setModal("edittxn",{txn:t})} style={TxnEditSmall}>Edit</button>
@@ -2234,8 +2250,8 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
     const rec=[];
     if(isIns&&f.makeRecurring&&f.premiumAmount&&f.payFromId){
       const day=+f.premiumDueDay||+String(f.premiumStartDate||today()).slice(8,10)||1;
-      if(isProtection)rec.push({name:`${f.name} premium`,type:"expense",amount:+f.premiumAmount,category:"Health",subcategory:"Insurance Premium",accountId:f.payFromId,day,frequency:f.premiumFrequency,startDate:f.premiumStartDate});
-      else rec.push({name:`${f.name} premium`,type:"transfer",amount:+f.premiumAmount,category:"Transfer",accountId:f.payFromId,toAccountId:id,day,frequency:f.premiumFrequency,startDate:f.premiumStartDate});
+      if(isProtection)rec.push({name:`${f.name} premium`,type:"expense",amount:+f.premiumAmount,category:"Health",subcategory:"Insurance Premium",accountId:f.payFromId,day,frequency:f.premiumFrequency,startDate:f.premiumStartDate,autoPostOnDue:false,manualOnly:true});
+      else rec.push({name:`${f.name} premium`,type:"transfer",amount:+f.premiumAmount,category:"Transfer",accountId:f.payFromId,toAccountId:id,day,frequency:f.premiumFrequency,startDate:f.premiumStartDate,autoPostOnDue:false,manualOnly:true});
     }
     addAcc({...clean,_recurring:rec});close();
   };
