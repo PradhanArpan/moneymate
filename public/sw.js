@@ -1,4 +1,4 @@
-const V="mm-v10-1";
+const V="mm-v10-2";
 const CORE=["/","/index.html","/manifest.webmanifest","/moneymate-icon-192.png","/moneymate-icon-512.png","/apple-touch-icon.png","/moneymate-icon.svg"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(CORE).catch(()=>{})));self.skipWaiting();});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))));self.clients.claim();});
