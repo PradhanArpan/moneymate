@@ -1318,33 +1318,41 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const month=period.kind==="month"?period.month:curMo();
   const income=txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
   const expense=txns.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
-  const savings=income-expense;
+  const surplus=income-expense;
+  const surplusLabel=surplus>=0?"Surplus":"Shortfall";
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
   const reminderRange=periodRange(period);
+  const upcomingRange=useMemo(()=>{
+    const start=today();
+    const end=period.kind==="year"?(reminderRange.end>start?reminderRange.end:start):addDays(start,60);
+    return {start,end};
+  },[period.kind,reminderRange.end]);
   const ccReminderAlerts=useMemo(()=>{
     const realToday=today();
-    const start=reminderRange.start<realToday?realToday:reminderRange.start,end=reminderRange.end,now=realToday,out=[];
+    const start=upcomingRange.start,end=upcomingRange.end,now=realToday,out=[];
     (data.accounts||[]).filter(a=>a.type==="Credit Card"&&a.dueDay).forEach(a=>{
       const sy=+start.slice(0,4),sm=+start.slice(5,7),ey=+end.slice(0,4),em=+end.slice(5,7);
       for(let y=sy;y<=ey;y++){for(let m=(y===sy?sm:1);m<=(y===ey?em:12);m++){
         const last=new Date(y,m,0).getDate();
         const d=Math.min(+a.dueDay,last);
         const due=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-        if(due>=start&&due<=end)out.push({...a,due,daysLeft:dateDiff(due,now),amount:currentDebtOutstanding(a,balances?.[a.id])});
+        if(due>=start&&due<=end)out.push({kind:"credit",icon:"💳",name:a.name,due,daysLeft:dateDiff(due,now),amount:currentDebtOutstanding(a,balances?.[a.id])});
       }}
     });
-    return out.sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name))).slice(0,8);
-  },[data,balances,reminderRange.start,reminderRange.end]);
+    return out;
+  },[data,balances,upcomingRange.start,upcomingRange.end]);
   const premiumAlerts=useMemo(()=>{
     const realToday=today();
-    const reminderFutureRange={...reminderRange,start:reminderRange.start<realToday?realToday:reminderRange.start};
-    return recurringOccurrencesInRange(data.recurring,reminderFutureRange,data.transactions)
-      .filter(r=>r&&(r.sourcePolicyId||/premium/i.test(String(r.name||r.note||"")))&&String(r.date)>=realToday)
-      .map(r=>({...r,due:r.date,daysLeft:dateDiff(r.date,realToday)}))
-      .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
-      .slice(0,8);
-  },[data,reminderRange.start,reminderRange.end]);
+    return recurringOccurrencesInRange(data.recurring,upcomingRange,data.transactions)
+      .filter(r=>r&&(r.sourcePolicyId||/premium|insurance|emi|loan|rent|bill|subscription/i.test(String(r.name||r.note||r.category||"")))&&String(r.date)>=realToday)
+      .map(r=>({kind:"recurring",icon:r.sourcePolicyId?"🛡️":"🔁",name:String(r.name||r.note||"Recurring").replace(/\s+premium$/i,""),due:r.date,daysLeft:dateDiff(r.date,realToday),amount:+r.amount||0}))
+      .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)));
+  },[data,upcomingRange.start,upcomingRange.end]);
+  const upcomingDues=useMemo(()=>[...ccReminderAlerts,...premiumAlerts]
+    .filter(x=>x.due>=today())
+    .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
+    .slice(0,8),[ccReminderAlerts,premiumAlerts]);
   const trendData=useMemo(()=>{
     const out=[];
     if(period.kind==="year"){
@@ -1352,7 +1360,9 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       for(let m=1;m<=12;m++){
         const mk=`${y}-${String(m).padStart(2,"0")}`;
         const mt=data.transactions.filter(t=>mkKey(t.date)===mk);
-        out.push({m:shortMo(mk),income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),expense:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});
+        const inc=mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
+        const exp=mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
+        out.push({m:shortMo(mk),income:inc,expense:exp,surplus:inc-exp});
       }
     }else{
       const base=new Date(`${month}-01`);
@@ -1360,37 +1370,101 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
         const d=new Date(base.getFullYear(),base.getMonth()-i,1);
         const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
         const mt=data.transactions.filter(t=>mkKey(t.date)===mk);
-        out.push({m:shortMo(mk),income:mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0),expense:mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0)});
+        const inc=mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount),0);
+        const exp=mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount),0);
+        out.push({m:shortMo(mk),income:inc,expense:exp,surplus:inc-exp});
       }
     }
     return out;
   },[data,period,month]);
+  const netWorthTrend=useMemo(()=>{
+    const out=[];const now=new Date();
+    for(let i=11;i>=0;i--){
+      const d=new Date(now.getFullYear(),now.getMonth()-i+1,0);
+      const mk=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      const endDate=ymd(d);
+      const nw=(data.accounts||[]).reduce((s,a)=>s+netWorthAccountValue(a,accountBalanceOnDate(data,a.id,endDate)),0);
+      out.push({m:shortMo(mk),netWorth:nw});
+    }
+    return out;
+  },[data]);
+  const liquidAccounts=useMemo(()=>(data.accounts||[]).filter(a=>isSavingsLike(a)),[data]);
+  const liquidBalance=liquidAccounts.reduce((s,a)=>s+(+balances?.[a.id]||0),0);
+  const creditRows=useMemo(()=>(data.accounts||[]).filter(a=>a.type==="Credit Card").map(a=>{
+    const u=creditCardUsage(a,balances?.[a.id]||0);
+    return {id:a.id,name:accountShortName(a),used:u.used,limit:u.limit,pct:u.usedPct,over:u.over};
+  }),[data,balances]);
+  const loanRows=useMemo(()=>(data.accounts||[]).filter(a=>a.type==="Loan").map(a=>{
+    const outstanding=currentDebtOutstanding(a,balances?.[a.id]);
+    const sanctioned=+a.sanctionedAmount||0;
+    const paidPct=loanPaidPct(a,balances?.[a.id]);
+    const outstandingPct=sanctioned>0?Math.min(100,(outstanding/sanctioned)*100):(outstanding>0?100:0);
+    return {id:a.id,name:accountShortName(a),outstanding,sanctioned,paidPct,outstandingPct};
+  }),[data,balances]);
+  const totalCardUsed=creditRows.reduce((s,r)=>s+r.used,0),totalLimit=creditRows.reduce((s,r)=>s+r.limit,0);
+  const totalCardPct=totalLimit>0?Math.min(100,totalCardUsed/totalLimit*100):0;
+  const totalLoanOutstanding=loanRows.reduce((s,r)=>s+r.outstanding,0);
+  const hasDues=upcomingDues.length>0;
   return(<div style={FixedScreen}>
     <MoneyHeader netWorth={liquidNetWorth} profile={profile} onAvatarClick={onProfileClick} period={period} setPeriod={setPeriod} periodModes={["month","year"]} right={<button onClick={()=>setModal("settings")} style={HeaderIconBtn}><Settings size={22}/></button>}/>
     <div style={{...ScrollPane,padding:"16px 18px calc(86px + env(safe-area-inset-bottom))"}}>
       <div style={OverviewCard}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:22,fontWeight:800}}>Overview</div><div style={{fontSize:22,color:C.muted,fontWeight:800}}>{inr(savings)}</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div><div style={{fontSize:22,fontWeight:900}}>Overview</div><div style={{fontSize:11.5,color:C.muted,marginTop:2}}>{periodLabel(period)}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:11.5,color:C.muted,fontWeight:850}}>{surplusLabel}</div><div style={{fontSize:22,color:surplus>=0?C.income:C.expense,fontWeight:900}}>{inr(Math.abs(surplus))}</div></div></div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:18}}>
           <OverviewMetric label="Income" value={inr(income)} tone={C.income}/>
-          <OverviewMetric label="Expenses" value={inr(expense)} tone={C.expense}/>
-          <OverviewMetric label="Saved" value={inr(savings)} tone={savings>=0?C.income:C.expense}/>
+          <OverviewMetric label="Spending" value={inr(expense)} tone={C.expense}/>
+          <OverviewMetric label={surplusLabel} value={inr(Math.abs(surplus))} tone={surplus>=0?C.income:C.expense}/>
         </div>
       </div>
+
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:800,marginBottom:8}}>Cashflow trend</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 60 days</div></div>
+        {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
+        {!hasDues&&!backupReminder?<EmptyState emoji="✅" text="No upcoming dues found."/>:upcomingDues.map(d=><div key={`${d.kind}-${d.name}-${d.due}`} style={NoticeRow}><span>{d.icon}</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(d.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{d.amount?inr(d.amount):""}</div></div>)}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+        <OverviewInfoCard label="Liquid balance" value={inr(liquidBalance)} sub={`${liquidAccounts.length} bank / cash / wallet`} tone={liquidBalance>=0?C.income:C.expense}/>
+        <OverviewInfoCard label="Net worth" value={inr(netWorth)} sub="Assets minus liabilities" tone={netWorth>=0?C.brand:C.expense}/>
+      </div>
+
+      <div style={OverviewCard}>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Credit & debt utilization</div>
+        {creditRows.length===0&&loanRows.length===0?<EmptyState emoji="🏦" text="No credit card or loan account added."/>:<>
+          {creditRows.length>0&&<div style={{marginBottom:12}}><OverviewDebtHeader label="Credit cards" amount={inr(totalCardUsed)} sub={totalLimit?`${Math.round(totalCardPct)}% utilized of ${inr(totalLimit)}`:"Credit limit not set"}/><OverviewThinBar pct={totalCardPct} tone="expense"/>{creditRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.used)} right={r.limit?`${Math.round(r.pct)}% used`:"Limit not set"} pct={r.pct} tone={r.over?"warn":"expense"}/>)}</div>}
+          {loanRows.length>0&&<div><OverviewDebtHeader label="Loans" amount={inr(totalLoanOutstanding)} sub="Current outstanding"/>{loanRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.outstanding)} right={r.sanctioned?`${Math.round(r.paidPct)}% repaid`:"Loan amount not set"} pct={r.outstandingPct} tone="expense"/>)}</div>}
+        </>}
+      </div>
+
+      <div style={OverviewCard}>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Cashflow trend</div>
         <ResponsiveContainer width="100%" height={138}>
           <LineChart data={trendData} margin={{top:4,right:4,left:-12,bottom:0}}>
             <CartesianGrid stroke={C.border} vertical={false}/>
             <XAxis dataKey="m" tick={{fontSize:10,fill:C.muted}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fontSize:9,fill:C.muted}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
             <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
-            <Line type="monotone" dataKey="income" stroke={C.income} strokeWidth={2.4} dot={false}/>
-            <Line type="monotone" dataKey="expense" stroke={C.expense} strokeWidth={2.4} dot={false}/>
+            <Line type="monotone" dataKey="income" name="Income" stroke={C.income} strokeWidth={2.4} dot={false}/>
+            <Line type="monotone" dataKey="expense" name="Spending" stroke={C.expense} strokeWidth={2.4} dot={false}/>
           </LineChart>
         </ResponsiveContainer>
       </div>
+
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:800,marginBottom:8}}>Expense split</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Net worth trend</div>
+        <ResponsiveContainer width="100%" height={138}>
+          <LineChart data={netWorthTrend} margin={{top:4,right:4,left:-12,bottom:0}}>
+            <CartesianGrid stroke={C.border} vertical={false}/>
+            <XAxis dataKey="m" tick={{fontSize:10,fill:C.muted}} axisLine={false} tickLine={false}/>
+            <YAxis tick={{fontSize:9,fill:C.muted}} axisLine={false} tickLine={false} tickFormatter={v=>Math.abs(v)>=100000?`${Math.round(v/100000)}L`:Math.abs(v)>=1000?`${Math.round(v/1000)}k`:v}/>
+            <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
+            <Line type="monotone" dataKey="netWorth" name="Net worth" stroke={C.brand} strokeWidth={2.4} dot={false}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div style={OverviewCard}>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Expense split</div>
         {pieData.length===0?<EmptyState emoji="📊" text={`No spending recorded for ${monthLabel(month)} yet.`}/>:<div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:10,alignItems:"center"}}>
           <ResponsiveContainer width="100%" height={120}>
             <PieChart><Pie data={pieData} dataKey="value" innerRadius={35} outerRadius={55} paddingAngle={2}>{pieData.map((_,i)=><Cell key={i} fill={C.charts[i%C.charts.length]}/>)}</Pie><Tooltip formatter={v=>inr(v)}/></PieChart>
@@ -1398,17 +1472,13 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
           <div style={{display:"grid",gap:6}}>{pieData.slice(0,4).map((r,i)=><button key={r.raw} onClick={()=>setModal("quickadd",{cat:r.raw,kind:"expense"})} style={{display:"flex",alignItems:"center",gap:8,border:"none",background:"transparent",padding:0,textAlign:"left",cursor:"pointer"}}><span style={{width:10,height:10,borderRadius:4,background:C.charts[i%C.charts.length]}}/><span style={{fontSize:12,fontWeight:800,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span><span style={{fontSize:12,fontWeight:900,color:C.expense}}>{inr(r.value)}</span></button>)}</div>
         </div>}
       </div>
+
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:800,marginBottom:10}}>Top categories</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Top spending categories</div>
         {topCats.length===0?<EmptyState emoji="📊" text={`No spending recorded for ${monthLabel(month)} yet.`}/>:topCats.map((r,i)=><div key={r.name} style={ListLine} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}>
-          <CatIcon name={r.name} index={i}/><div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{catLabel(r.name)}</div><div style={{fontSize:11,color:C.muted}}>{Math.round((r.value/(expense||1))*100)}% of expense</div></div><div style={{fontSize:15,fontWeight:900,color:C.expense}}>{inr(r.value)}</div>
+          <CatIcon name={r.name} index={i}/><div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{catLabel(r.name)}</div><div style={{fontSize:11,color:C.muted}}>{Math.round((r.value/(expense||1))*100)}% of spending</div></div><div style={{fontSize:15,fontWeight:900,color:C.expense}}>{inr(r.value)}</div>
         </div>)}
       </div>
-      {(backupReminder||ccReminderAlerts.length>0||premiumAlerts.length>0)&&<div style={OverviewCard}>
-        {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
-        {ccReminderAlerts.map(cc=><div key={`${cc.id}-${cc.due}`} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(cc.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{cc.amount?inr(cc.amount):""}</div></div>)}
-        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||p.note||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Next due {fmtShortDate(p.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div></div>)}
-      </div>}
     </div>
   </div>);
 }
@@ -1994,6 +2064,10 @@ function FloatingAdd({onClick}){return <button onClick={onClick} style={{positio
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:12,padding:"7px 8px",textAlign:"center",border:`1px solid ${C.border}`}}><div style={{fontSize:11,color:"#55565F",fontWeight:800}}>{label}</div><div style={{fontSize:13,color:C.muted,marginTop:2,fontWeight:900}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
 function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
+function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div></div>}
+function OverviewThinBar({pct=0,tone="brand"}){const p=Math.max(0,Math.min(100,pct));const color=tone==="expense"?C.expense:tone==="warn"?C.warn:C.brand;return <div style={{height:8,borderRadius:999,background:C.bg,overflow:"hidden",margin:"7px 0 8px"}}><div style={{height:"100%",width:`${p}%`,borderRadius:999,background:color}}/></div>}
+function OverviewDebtHeader({label,amount,sub}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}><div><div style={{fontSize:13,fontWeight:950,color:C.ink}}>{label}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:1}}>{sub}</div></div><div style={{fontSize:15,fontWeight:950,color:C.expense,whiteSpace:"nowrap"}}>{amount}</div></div>}
+function OverviewProgressRow({label,left,right,pct,tone="brand"}){return <div style={{marginTop:9}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5}}><span style={{fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{label}</span><span style={{fontWeight:900,color:C.muted,whiteSpace:"nowrap"}}>{left}</span></div><OverviewThinBar pct={pct} tone={tone}/><div style={{fontSize:10.5,color:C.muted,fontWeight:750,textAlign:"right",marginTop:-5}}>{right}</div></div>}
 const EmptyState=({emoji,text})=><div style={{textAlign:"center",padding:"26px 10px",color:C.muted}}><div style={{fontSize:42,marginBottom:8}}>{emoji}</div><div style={{fontSize:13}}>{text}</div></div>;
 const ListLine={display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"};
 const TransactionRow={background:C.card,borderRadius:16,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 2px 8px rgba(32,33,44,.04)",border:`1px solid ${C.border}`};
