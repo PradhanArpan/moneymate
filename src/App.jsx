@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.5 Thin Reminders + Premiums
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.6 Budget Category Carousel
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1626,7 +1626,7 @@ function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,profile,onP
     <MoneyHeader netWorth={liquidNetWorth} profile={profile} onAvatarClick={onProfileClick} month={month} setMonth={setMonth} right={<button onClick={()=>setModal("budget",{month})} style={HeaderIconBtn}><Plus size={26}/></button>}/>
     <div style={{...ScrollPane,padding:"0 0 calc(86px + env(safe-area-inset-bottom))"}}>
       <BudgetBand title="Expenses" sub={`spent ${inr(exp)}`} amount={inr(exp)} budget={`budgeted ${inr(totalBudget)}`} color="#F7D7E8"/>
-      <BudgetCategoryCarousel rows={rows} onBudget={(r)=>r?.key?setModal("budget",{month,key:r.key,amount:r.budget,scope:(data.budgetOverrides||{})[month]?.[r.key]!==undefined?"thisMonth":"repeat"}):setModal("budget",{month})}/>
+      <BudgetCategoryCarousel rows={rows} onBudget={(r)=>r?.editKey?setModal("budget",{month,key:r.editKey,amount:r.editAmount,scope:(data.budgetOverrides||{})[month]?.[r.editKey]!==undefined?"thisMonth":"repeat"}):setModal("budget",{month})}/>
       <BudgetBand title="Savings" sub={`credited to goals/investments ${inr(saved)}`} amount={inr(saved)} budget="linked to goals / investments" color="#FFE7D5"/>
       <BudgetBand title="Income" sub={`credited amounts ${inr(inc)}`} amount={inr(inc)} budget="from income entries" color="#D4F3EF"/>
       <div style={{padding:"16px 18px",display:"grid",gap:8}}>
@@ -1760,7 +1760,18 @@ function budgetLabel(key){const p=parseBudgetKey(key);return p.sub?`${p.cat} · 
 function categoryBudgetTotal(budgets={},cat){const c=mainCategory(cat);return Object.entries(budgets).reduce((s,[k,v])=>s+(parseBudgetKey(k).cat===c?(+v||0):0),0);}
 function budgetSpentForKey(txns=[],key=""){const p=parseBudgetKey(key);return txns.filter(t=>t.type==="expense"&&mainCategory(t.category||"Other")===p.cat&&(!p.sub||(t.subcategory||"")===p.sub)).reduce((s,t)=>s+(+t.amount||0),0);}
 function budgetShortLabel(key){const p=parseBudgetKey(key);return p.sub||p.cat;}
-function budgetRowsForCarousel(txns=[],budgets={}){return Object.entries(budgets).filter(([,v])=>(+v||0)>0).map(([key,budget])=>{const p=parseBudgetKey(key);return {key,name:p.cat,displayName:p.sub||p.cat,value:budgetSpentForKey(txns,key),budget:+budget||0,sub:p.sub};}).sort((a,b)=>((b.value>0)-(a.value>0))||(b.budget-a.budget)||String(a.displayName).localeCompare(String(b.displayName)));}
+function budgetSpentForCategory(txns=[],cat="Other"){const c=mainCategory(cat||"Other");return txns.filter(t=>t.type==="expense"&&mainCategory(t.category||"Other")===c).reduce((s,t)=>s+(+t.amount||0),0);}
+function budgetRowsForCarousel(txns=[],budgets={}){
+  const grouped=new Map();
+  Object.entries(budgets).filter(([,v])=>(+v||0)>0).forEach(([key,budget])=>{
+    const p=parseBudgetKey(key), cat=mainCategory(p.cat||"Other");
+    const g=grouped.get(cat)||{key:cat,name:cat,displayName:cat,budget:0,keys:[],editKey:null,editAmount:undefined};
+    g.budget+=(+budget||0);g.keys.push(key);
+    if(!p.sub){g.editKey=key;g.editAmount=+budget||0;}
+    grouped.set(cat,g);
+  });
+  return [...grouped.values()].map(g=>({...g,value:budgetSpentForCategory(txns,g.name),sub:"",composite:g.keys.length>1||!g.editKey})).sort((a,b)=>((b.value>0)-(a.value>0))||(b.budget-a.budget)||String(a.displayName).localeCompare(String(b.displayName)));
+}
 function accountIsSavingsTarget(a){return !!(a&&(a._goal||["Savings","Mutual Fund","Insurance","Goal","FD","RD","PPF","EPF","NPS","Stocks","SGB","Gold / SGB","Gold/SGB","Bonds"].includes(a.type)));}
 function creditedToSavingsTargets(txns=[],accounts=[]){const targets=new Set(accounts.filter(accountIsSavingsTarget).map(a=>a.id));return txns.reduce((s,t)=>{const amt=+t.amount||0;if(t.type==="income"&&targets.has(t.accountId))return s+amt;if(t.type==="transfer"&&targets.has(t.toAccountId))return s+amt;return s;},0);}
 function totalCreditedIncome(txns=[]){return txns.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount||0),0);}
