@@ -213,6 +213,7 @@ const numVal = n=>{const v=Number(n);return Number.isFinite(v)?v:0;};
 const amountKey = n=>{const v=numVal(n);const sign=v<0?"-":"";const abs=Math.abs(v);const paise=Math.trunc(abs*100+1e-8);return `${sign}${Math.trunc(paise/100)}.${String(paise%100).padStart(2,"0")}`;};
 const moneyNoRound = n=>{const k=amountKey(n);const sign=k.startsWith("-")?"-":"";const [w,rawF]=(sign?k.slice(1):k).split(".");const whole=new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Number(w)||0);const frac=(rawF||"").replace(/0+$/,"");return sign+whole+(frac?`.${frac}`:"");};
 const inr    = n=>"₹"+moneyNoRound(n);
+const inrRounded = n=>`${numVal(n)<0?"-":""}₹${new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Math.round(Math.abs(numVal(n))))}`;
 const signedInr = n=>`${n<0?"-":""}₹${moneyNoRound(Math.abs(numVal(n)))}`;
 function liquidDeltaFromTransactions(txns=[],liquidIds=new Set()){
   return (txns||[]).reduce((s,t)=>{
@@ -1439,7 +1440,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
 
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Cashflow trend</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Cashflow Trends</div>
         <ResponsiveContainer width="100%" height={138}>
           <LineChart data={trendData} margin={{top:4,right:4,left:-12,bottom:0}}>
             <CartesianGrid stroke={C.border} vertical={false}/>
@@ -1454,13 +1455,13 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
 
       <div style={OverviewCard}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 60 days</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming Dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 60 days</div></div>
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
         {upcomingDues.length===0&&!backupReminder?<EmptyState emoji="✅" text="No upcoming dues found."/>:upcomingDues.map(d=><div key={`${d.kind}-${d.name}-${d.due}`} style={NoticeRow}><span>{d.icon}</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(d.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{d.amount?inr(d.amount):""}</div></div>)}
       </div>
 
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Expense split</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Expense Split</div>
         {pieData.length===0?<EmptyState emoji="📊" text={`No spending recorded for ${monthLabel(month)} yet.`}/>:<div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:10,alignItems:"center"}}>
           <ResponsiveContainer width="100%" height={120}>
             <PieChart><Pie data={pieData} dataKey="value" innerRadius={35} outerRadius={55} paddingAngle={2}>{pieData.map((_,i)=><Cell key={i} fill={C.charts[i%C.charts.length]}/>)}</Pie><Tooltip formatter={v=>inr(v)}/></PieChart>
@@ -1470,18 +1471,18 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
 
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Top spending categories</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Top Spending Categories</div>
         {topCats.length===0?<EmptyState emoji="📊" text={`No spending recorded for ${monthLabel(month)} yet.`}/>:topCats.map((r,i)=><div key={r.name} style={ListLine} onClick={()=>setModal("quickadd",{cat:r.name,kind:"expense"})}>
           <CatIcon name={r.name} index={i}/><div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{catLabel(r.name)}</div><div style={{fontSize:11,color:C.muted}}>{Math.round((r.value/(expense||1))*100)}% of spending</div></div><div style={{fontSize:15,fontWeight:900,color:C.expense}}>{inr(r.value)}</div>
         </div>)}
       </div>
 
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Debt / credit utilization</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Debt/ Credit Utilization</div>
         {creditRows.length===0&&loanRows.length===0?<EmptyState emoji="🏦" text="No credit card or loan account added."/>:<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-            <OverviewInfoCard label="Credit card utilization" value={totalLimit?`${Math.round(totalCardPct)}%`:"—"} sub={totalLimit?`${inr(totalCardUsed)} of ${inr(totalLimit)}`:"Credit limit not set"} tone={totalCardPct>70?C.expense:C.brand}/>
-            <OverviewInfoCard label="Loan outstanding" value={inr(totalLoanOutstanding)} sub={`${loanRows.length} loan account${loanRows.length===1?"":"s"}`} tone={totalLoanOutstanding>0?C.expense:C.income}/>
+            <OverviewInfoCard label="Utilization" value={totalLimit?<span style={{display:"flex",alignItems:"baseline",gap:7,minWidth:0,whiteSpace:"nowrap",overflow:"hidden"}}><span style={{fontSize:18,fontWeight:950,color:totalCardPct>70?C.expense:C.brand}}>{Math.round(totalCardPct)}%</span><span style={{fontSize:10.5,fontWeight:900,color:C.muted,overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(totalCardUsed)} / {inrRounded(totalLimit)}</span></span>:"—"} sub={totalLimit?"used / limit":"Credit limit not set"} tone={totalCardPct>70?C.expense:C.brand}/>
+            <OverviewInfoCard label="Outstanding" value={inrRounded(totalLoanOutstanding)} sub={`${loanRows.length} loan account${loanRows.length===1?"":"s"}`} tone={totalLoanOutstanding>0?C.expense:C.income}/>
           </div>
           {creditRows.length>0&&<div style={{marginBottom:12}}><OverviewDebtHeader label="Credit cards" amount={inr(totalCardUsed)} sub={totalLimit?`${Math.round(totalCardPct)}% utilized`:"Credit limit not set"}/><OverviewThinBar pct={totalCardPct} tone="expense"/>{creditRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.used)} right={r.limit?`${Math.round(r.pct)}% used`:"Limit not set"} pct={r.pct} tone={r.over?"warn":"expense"}/>)}</div>}
           {loanRows.length>0&&<div><OverviewDebtHeader label="Loans" amount={inr(totalLoanOutstanding)} sub="Current outstanding"/>{loanRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.outstanding)} right={r.sanctioned?`${Math.round(r.paidPct)}% repaid`:"Loan amount not set"} pct={r.outstandingPct} tone="expense"/>)}</div>}
@@ -1489,13 +1490,13 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
 
       <div style={OverviewCard}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Liquid balance</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Bank + cash available</div></div>
-        <div style={{fontSize:24,fontWeight:950,color:liquidBalance>=0?C.income:C.expense,marginBottom:8}}>{inr(liquidBalance)}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Liquid Balance</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Bank + Cash Available</div></div>
+        <div style={{fontSize:24,fontWeight:950,color:liquidBalance>=0?C.income:C.expense,marginBottom:8,textAlign:"left",alignSelf:"flex-start"}}>{inr(liquidBalance)}</div>
         {liquidAccounts.length===0?<EmptyState emoji="💳" text="No bank, cash or wallet account added."/>:liquidAccounts.slice(0,5).map(a=><div key={a.id} style={{...ListLine,padding:"7px 0"}}><div style={{fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{accountShortName(a)}</div><div style={{fontWeight:950,color:(+balances?.[a.id]||0)>=0?C.ink:C.expense}}>{inr(+balances?.[a.id]||0)}</div></div>)}
       </div>
 
       <div style={OverviewCard}>
-        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Net worth trend</div>
+        <div style={{fontSize:18,fontWeight:850,marginBottom:8}}>Net Worth Trend</div>
         <div style={{fontSize:11,color:C.muted,fontWeight:750,marginTop:-4,marginBottom:6}}>Assets minus liabilities over time</div>
         <ResponsiveContainer width="100%" height={138}>
           <LineChart data={netWorthTrend} margin={{top:4,right:4,left:-12,bottom:0}}>
@@ -2092,7 +2093,7 @@ function FloatingAdd({onClick}){return <button onClick={onClick} style={{positio
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:12,padding:"7px 8px",textAlign:"center",border:`1px solid ${C.border}`}}><div style={{fontSize:11,color:"#55565F",fontWeight:800}}>{label}</div><div style={{fontSize:13,color:C.muted,marginTop:2,fontWeight:900}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
 function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
-function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div></div>}
+function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{value}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div></div>}
 function OverviewThinBar({pct=0,tone="brand"}){const p=Math.max(0,Math.min(100,pct));const color=tone==="expense"?C.expense:tone==="warn"?C.warn:C.brand;return <div style={{height:8,borderRadius:999,background:C.bg,overflow:"hidden",margin:"7px 0 8px"}}><div style={{height:"100%",width:`${p}%`,borderRadius:999,background:color}}/></div>}
 function OverviewDebtHeader({label,amount,sub}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}><div><div style={{fontSize:13,fontWeight:950,color:C.ink}}>{label}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:1}}>{sub}</div></div><div style={{fontSize:15,fontWeight:950,color:C.expense,whiteSpace:"nowrap"}}>{amount}</div></div>}
 function OverviewProgressRow({label,left,right,pct,tone="brand"}){return <div style={{marginTop:9}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5}}><span style={{fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{label}</span><span style={{fontWeight:900,color:C.muted,whiteSpace:"nowrap"}}>{left}</span></div><OverviewThinBar pct={pct} tone={tone}/><div style={{fontSize:10.5,color:C.muted,fontWeight:750,textAlign:"right",marginTop:-5}}>{right}</div></div>}
