@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.6 Budget Category Carousel
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.7 Transaction Input Order
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1061,17 +1061,17 @@ function Main({data,persist,pin}){
     return()=>window.removeEventListener("popstate",onPop);
   },[]);
 
-  const addTxn  =t=>persist({...data,transactions:[...(data.transactions||[]),{...t,id:t.id||uid()}]});
-  const addTxns =ts=>persist({...data,transactions:[...(data.transactions||[]),...(ts||[]).map(t=>({...t,id:t.id||uid()}))]});
+  const addTxn  =t=>persist({...data,transactions:[...(data.transactions||[]),{...t,id:t.id||uid(),createdAt:t.createdAt||Date.now()}]});
+  const addTxns =ts=>{const stamp=Date.now();persist({...data,transactions:[...(data.transactions||[]),...(ts||[]).map((t,i)=>({...t,id:t.id||uid(),createdAt:t.createdAt||stamp+i}))]});};
   const delTxn  =id=>persist({...data,transactions:data.transactions.filter(t=>t.id!==id)});
-  const editTxn =(id,ch)=>persist({...data,transactions:data.transactions.map(t=>t.id===id?{...t,...ch}:t)});
+  const editTxn =(id,ch)=>persist({...data,transactions:data.transactions.map(t=>t.id===id?{...t,...ch,updatedAt:Date.now()}:t)});
   const addAcc  =a=>{const id=a.id||uid();const {_recurring=[],...clean}=a;persist({...data,accounts:[...data.accounts,{...clean,id}],recurring:[...data.recurring,..._recurring.map(r=>({...r,id:uid(),linkedAccountId:id}))]});};
   const delAcc  =id=>persist({...data,accounts:data.accounts.filter(a=>a.id!==id),transactions:data.transactions.filter(t=>t.accountId!==id&&t.toAccountId!==id)});
   const editAcc =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
   const editLoan=(id,out,ch={})=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch,outstandingAmount:+out}:a)});
   const editCC  =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
-  const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),type:"expense",amount:+amt,category:"EMI",accountId:bankId,date:today(),note:note||"Loan payment"};const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});};
-  const payCC=(ccId,bankId,amt,note)=>{const txn={id:uid(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:ccId,date:today(),note:note||"Credit card payment",category:"Transfer"};const cc=data.accounts.find(a=>a.id===ccId);const newOut=Math.max(0,(+cc?.currentOutstanding||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===ccId?{...a,currentOutstanding:newOut}:a)});};
+  const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"expense",amount:+amt,category:"EMI",accountId:bankId,date:today(),note:note||"Loan payment"};const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});};
+  const payCC=(ccId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:ccId,date:today(),note:note||"Credit card payment",category:"Transfer"};const cc=data.accounts.find(a=>a.id===ccId);const newOut=Math.max(0,(+cc?.currentOutstanding||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===ccId?{...a,currentOutstanding:newOut}:a)});};
   const addGoal =g=>persist({...data,goals:[...data.goals,{...g,id:uid()}]});
   const delGoal =id=>persist({...data,goals:data.goals.filter(g=>g.id!==id)});
   const editGoal=(id,ch)=>persist({...data,goals:data.goals.map(g=>g.id===id?{...g,...ch}:g)});
@@ -1111,6 +1111,7 @@ function Main({data,persist,pin}){
     if(r.type==="transfer"&&!r.toAccountId){alert("Choose the To account before marking this as paid.");return false;}
     const txn={
       id:uid(),
+      createdAt:Date.now(),
       type:r.type,
       amount,
       category:r.type==="transfer"?"Transfer":mainCategory(r.category),
@@ -1131,7 +1132,7 @@ function Main({data,persist,pin}){
     const due=nextRecurringDueDate(rec)||today();
     payRecurringOccurrence(rec,due);
   };
-  const importBatch=txns=>persist({...data,transactions:[...data.transactions,...txns]});
+  const importBatch=txns=>{const stamp=Date.now();persist({...data,transactions:[...data.transactions,...(txns||[]).map((t,i)=>({...t,id:t.id||uid(),createdAt:t.createdAt||stamp+i}))]});};
   const restoreData=d=>{persist(d);};
   const editProfile=ch=>persist({...data,profile:{...DEFAULT_PROFILE,...(data.profile||{}),...ch}});
   const exportCSV=()=>{const head="Date,Type,Category,Account,Amount,Note\n";const body=[...data.transactions].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId)?.name||"";const q=s=>`"${String(s||"").replace(/"/g,'""')}"`;return[t.date,t.type,q(t.category),q(acc),t.amount,q(t.note)].join(",");}).join("\n");const url=URL.createObjectURL(new Blob([head+body],{type:"text/csv"}));const a=document.createElement("a");a.href=url;a.download=`moneymate-${today()}.csv`;a.click();URL.revokeObjectURL(url);};
@@ -1388,7 +1389,17 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
   const range=periodRange(period);
   const realPeriodList=periodTxns(data.transactions,period).filter(t=>txnMatchesAccount(t,accountFilter,data));
   const plannedList=recurringOccurrencesInRange(data.recurring,range,data.transactions).filter(t=>txnMatchesAccount(t,accountFilter,data));
-  const periodList=[...realPeriodList,...plannedList].sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(a._planned?1:0).localeCompare(String(b._planned?1:0)));
+  const txnInputIndex=new Map((data.transactions||[]).map((t,i)=>[t.id,i]));
+  const inputRank=t=>t._planned?-1:(Number.isFinite(+t.createdAt)?+t.createdAt:(txnInputIndex.has(t.id)?txnInputIndex.get(t.id):0));
+  const periodList=[...realPeriodList,...plannedList].sort((a,b)=>{
+    const ap=a._planned?1:0,bp=b._planned?1:0;
+    if(ap!==bp)return ap-bp;
+    if(!ap){
+      const r=inputRank(b)-inputRank(a);
+      if(r)return r;
+    }
+    return String(b.date||"").localeCompare(String(a.date||""))||String(b.id||"").localeCompare(String(a.id||""));
+  });
   const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
   const endingBal=accountFilter==="all"?savingsTxnAccounts(data).reduce((s,a)=>s+(balances?.[a.id]||0),0):(balances?.[accountFilter]||0);
   const startBal=endingBal-realPeriodList.reduce((s,t)=>s+txnBalanceEffect(t,accountFilter,data),0);
