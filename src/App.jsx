@@ -436,18 +436,8 @@ function evalExpr(s){
 }
 
 /* ── Data model ──────────────────────────────────────────────────── */
-const HARDCODED_LIC_ACCOUNTS=[
-  {id:"lic-828805529",name:"LIC's Jeevan Labh",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"828805529",hint:"5529",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:500000,policyTerm:21,premiumPayingTerm:15,commencementDate:"2019-02-28",maturityDate:"2040-02-28",nextPayoutDate:"",premiumAmount:26876,premiumFrequency:"yearly",premiumDueDay:28,premiumStartDate:"2027-02-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:625,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:""},
-  {id:"lic-846654193",name:"New Money Back Plan - 25 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"846654193",hint:"4193",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:200000,policyTerm:25,premiumPayingTerm:20,commencementDate:"2017-03-18",maturityDate:"2042-03-18",nextPayoutDate:"2042-03-18",premiumAmount:5934,premiumFrequency:"halfyearly",premiumDueDay:18,premiumStartDate:"2026-09-18",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:230,riderSumAssured:200000,linkedBankAccountNumber:"ending 1924",bankName:"KOTAK MAHINDRA BANK LIMITED",bankBranch:"ROURKELA"},
-  {id:"lic-596951289",name:"New Money Back Plan - 20 Years",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596951289",hint:"1289",status:"Active",policyType:"Life Insurance",planType:"Money Back",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:15,commencementDate:"2015-09-28",maturityDate:"2035-09-28",nextPayoutDate:"2035-09-28",premiumAmount:3938,premiumFrequency:"halfyearly",premiumDueDay:28,premiumStartDate:"2026-09-28",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:120,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
-  {id:"lic-596600835",name:"New Jeevan Anand",type:"Life Insurance",logoKey:"lic",opening:0,accountNumber:"596600835",hint:"0835",status:"Active",policyType:"Life Insurance",planType:"Endowment",lifeInsured:"ARPAN PRADHAN",nomineeName:"",sumAssured:100000,policyTerm:20,premiumPayingTerm:20,commencementDate:"2014-07-17",maturityDate:"2034-07-17",nextPayoutDate:"",premiumAmount:5804,premiumFrequency:"yearly",premiumDueDay:17,premiumStartDate:"2026-07-17",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Accidental Death & Disability Benefit Rider",riderPremium:100,riderSumAssured:100000,linkedBankAccountNumber:"ending 0034",bankName:"STATE BANK OF INDIA",bankBranch:"NIT ROURKELA"},
-  {id:"hdfclife-sanchay-22258767",name:"HDFC Life Sanchay Plus",type:"Life Insurance",logoKey:"hdfclifeplus",opening:0,accountNumber:"22258767",hint:"8767",status:"Active",policyType:"Life Insurance",planType:"Sanchay Plus - Guaranteed Income",lifeInsured:"Arpan Pradhan",nomineeName:"Sudatta Mohanty",sumAssured:741600,sumAssuredOnDeath:741600,guaranteedSumAssuredOnMaturity:710114,policyTerm:11,premiumPayingTerm:10,commencementDate:"2020-01-29",issueDate:"2020-01-31",maturityDate:"2031-01-29",nextPayoutDate:"2031-01-29",premiumAmount:5000,annualizedPremium:57142.86,premiumFrequency:"monthly",premiumDueDay:29,premiumStartDate:"2026-06-29",premiumEndDate:"2029-12-29",finalPremiumDueDate:"2029-12-29",autoPayStatus:"Unknown",maturityAmount:710114,guaranteedIncomeOnMaturity:110651,payoutPeriod:"10 years starting from year 12",incomePayoutFrequency:"Annually",riderName:"",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 31/01/2020; premium due monthly on 29th; final premium due 29/12/2029."},
-  {id:"hdfclife-click2wealth-21539805",name:"HDFC Life Click 2 Wealth",type:"Life Insurance",logoKey:"hdfclifeplus",opening:0,accountNumber:"21539805",hint:"9805",status:"Active",policyType:"Life Insurance",planType:"Click 2 Wealth - Invest Plus Option",lifeInsured:"Arpan Pradhan",nomineeName:"Sudatta Mohanty",sumAssured:600000,policyTerm:15,premiumPayingTerm:5,commencementDate:"2019-06-04",issueDate:"2019-06-04",maturityDate:"2034-06-04",nextPayoutDate:"",premiumAmount:5000,annualizedPremium:60000,premiumFrequency:"monthly",premiumDueDay:4,premiumStartDate:"2019-07-04",premiumEndDate:"2024-05-04",finalPremiumDueDate:"2024-05-04",autoPayStatus:"Unknown",maturityAmount:0,riderName:"ULIP funds: Diversified Equity 40%, Equity Advantage 40%, Opportunities 20%",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 04/06/2019; premium paying term 5 years; final premium due 04/05/2024; maturity 04/06/2034."},
-];
-const HARDCODED_HEALTH_INSURANCE_ACCOUNTS=[
-  {id:"health-hdfcergo-2856205316603901000",name:"HDFC ERGO Optima Secure",type:"Health Insurance",logoKey:"hdfcergo",opening:0,accountNumber:"2856205316603901000",hint:"1000",status:"Active",policyType:"Health Insurance",planType:"my:Optima Secure",lifeInsured:"Arpan Pradhan; Joice Das",nomineeName:"Sudatta Mohanty",sumAssured:2500000,policyTerm:3,premiumPayingTerm:0,commencementDate:"2026-03-19",maturityDate:"2029-03-18",nextPayoutDate:"",premiumAmount:68361,premiumFrequency:"once",premiumDueDay:20,premiumStartDate:"2029-02-20",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Family Floater; Plus Benefit; Secure Benefit; Automatic Restore; Optima Wellbeing",riderPremium:0,riderSumAssured:500000,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 20/02/2026; premium paid 20/02/2026; policy period 19/03/2026 to 18/03/2029; next renewal reminder set to 20/02/2029",policyCategory:"Family Floater",policyUIN:"HDFHLIP25041V062425",premiumReceiptNo:"3822602127753",coverageNotes:"Base health cover ₹25,00,000; Plus Benefit ₹5,00,000; Emergency Air Ambulance up to ₹5,00,000; Preventive Health Check-up floater ₹10,000; insured persons: Arpan Pradhan and Joice Das."},
-  {id:"health-star-11251373949700",name:"Star Health Women Care",type:"Health Insurance",logoKey:"starhealth",opening:0,accountNumber:"11251373949700",hint:"9700",status:"Active",policyType:"Health Insurance",planType:"Star Women Care Insurance Policy",lifeInsured:"Joice Das",nomineeName:"Arpan Pradhan",sumAssured:5000000,policyTerm:2,premiumPayingTerm:0,commencementDate:"2024-11-26",maturityDate:"2026-11-25",nextPayoutDate:"",premiumAmount:39713,premiumFrequency:"once",premiumDueDay:25,premiumStartDate:"2026-11-25",autoPayStatus:"Not Enabled",maturityAmount:0,riderName:"Individual health cover; Star Women Care Insurance - 2021",riderPremium:0,riderSumAssured:0,linkedBankAccountNumber:"",bankName:"",bankBranch:"Policy issued 26/11/2024; premium paid 26/11/2024; policy period 26/11/2024 to 25/11/2026",policyCategory:"Individual",policyUIN:"SHAHLIP23132V022223",premiumReceiptNo:"700016/RV/2025/0176774927/1",coverageNotes:"Sum insured ₹50,00,000; insured person: Joice Das; nominee: Arpan Pradhan; no PED declared; policy type: Star Women Care Insurance - 2021."},
-];
+const HARDCODED_LIC_ACCOUNTS=[];
+const HARDCODED_HEALTH_INSURANCE_ACCOUNTS=[];
 const mergeAccountDefaults=(account,defaults)=>{
   const out={...account};
   Object.entries(defaults).forEach(([k,v])=>{
@@ -591,15 +581,7 @@ function ensureHardcodedLicRecurring(recurring=[],accounts=[]){
   return out;
 }
 
-const DEFAULT_ACCOUNTS=ensureHardcodedHealthInsuranceAccounts(ensureHardcodedLicAccounts([
-  {id:"acc-sib",  name:"South Indian Bank",type:"Bank",  opening:0,hint:"0584"},
-  {id:"acc-hdfc", name:"HDFC Bank",         type:"Bank",  opening:0,hint:"9712"},
-  {id:"acc-sbi1", name:"SBI – 4034",        type:"Bank",  opening:0,hint:"4034"},
-  {id:"acc-sbi2", name:"SBI – 5194",        type:"Bank",  opening:0,hint:"5194"},
-  {id:"acc-ktk",  name:"Kotak Bank",         type:"Bank",  opening:0,hint:"1924"},
-  {id:"acc-loan", name:"SBI Car Loan",       type:"Loan",  loanType:"Car Loan",
-   sanctionedAmount:780000,outstandingAmount:576797,opening:0,hint:""},
-]));
+const DEFAULT_ACCOUNTS=[];
 const DEFAULT_RECURRING=ensureHardcodedLicRecurring([],DEFAULT_ACCOUNTS);
 const DEFAULT_PROFILE={name:"MoneyMate User",email:"",phone:"",city:"",notes:"",photoDataUrl:""};
 const EMPTY={
@@ -744,7 +726,7 @@ const guessCat=(d,t)=>{const r=t==="income"?ICAT:CCAT;for(const[re,c]of r)if(re.
 const isCr=l=>/\bcr\b|credit|deposit|interest credit|interest paid|int\.?pd|dep tfr|by [a-z]|refund|cashback|reversal|payout|nach.*cr/i.test(l);
 const isDr=l=>/\bdr\b|debit|withdraw|wdl\b|paid via|payment|sent|upi-|neft dr|nach.*dr/i.test(l);
 function detectTransfer(desc,accounts){
-  const IFSC=[{re:/HDFC0/i,hints:["9712"]},{re:/SIBL0|SOUTH\s*I\s*\//i,hints:["0584"]},{re:/KKBK0/i,hints:["1924"]},{re:/SBIN0/i,hints:["4034","5194"]}];
+  const IFSC=[{re:/HDFC0/i,hints:[]},{re:/SIBL0|SOUTH\s*I\s*\//i,hints:[]},{re:/KKBK0/i,hints:[]},{re:/SBIN0/i,hints:[]}];
   const banks=accounts.filter(a=>BANK_TYPES.includes(a.type)||a.type==="UPI / Wallet");
   const cc=accounts.filter(a=>a.type==="Credit Card");
   const loans=accounts.filter(a=>a.type==="Loan");
@@ -2515,7 +2497,7 @@ function LoanModal({close,addAcc,presetLoanType,title}){
     <L>Loan name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. Home Loan"/>
     <L>Type</L><select style={F} value={f.loanType} onChange={s("loanType")}>{LOAN_TYPES.map(t=><option key={t}>{t}</option>)}</select>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={["Loan"]}/><L>Sanctioned amount (₹)</L><input style={F} type="number" value={f.sanctioned} onChange={s("sanctioned")} placeholder="780000"/>
-    <L>Current outstanding (₹)</L><input style={F} type="number" value={f.outstanding} onChange={s("outstanding")} placeholder="576797"/>
+    <L>Current outstanding (₹)</L><input style={F} type="number" value={f.outstanding} onChange={s("outstanding")} placeholder="0"/>
     <button onClick={()=>{if(!f.name||!f.sanctioned)return;addAcc({name:f.name,type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctioned,outstandingAmount:+f.outstanding||0,opening:0,hint:"",logoKey:f.logoKey});close();}} style={SB}>Add</button>
   </Sheet>);
 }
