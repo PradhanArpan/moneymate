@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.9 Short Names/Reminder Polish
+   MONEYMATE  ·  Smart Money Tracker  ·  v12.0 Future Reminders
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1323,7 +1323,8 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
   const reminderRange=periodRange(period);
   const ccReminderAlerts=useMemo(()=>{
-    const start=reminderRange.start,end=reminderRange.end,now=today(),out=[];
+    const realToday=today();
+    const start=reminderRange.start<realToday?realToday:reminderRange.start,end=reminderRange.end,now=realToday,out=[];
     (data.accounts||[]).filter(a=>a.type==="Credit Card"&&a.dueDay).forEach(a=>{
       const sy=+start.slice(0,4),sm=+start.slice(5,7),ey=+end.slice(0,4),em=+end.slice(5,7);
       for(let y=sy;y<=ey;y++){for(let m=(y===sy?sm:1);m<=(y===ey?em:12);m++){
@@ -1335,11 +1336,15 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
     });
     return out.sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name))).slice(0,8);
   },[data,balances,reminderRange.start,reminderRange.end]);
-  const premiumAlerts=useMemo(()=>recurringOccurrencesInRange(data.recurring,reminderRange,data.transactions)
-      .filter(r=>r&&(r.sourcePolicyId||/premium/i.test(String(r.name||r.note||""))))
-      .map(r=>({...r,due:r.date,daysLeft:dateDiff(r.date,today())}))
+  const premiumAlerts=useMemo(()=>{
+    const realToday=today();
+    const reminderFutureRange={...reminderRange,start:reminderRange.start<realToday?realToday:reminderRange.start};
+    return recurringOccurrencesInRange(data.recurring,reminderFutureRange,data.transactions)
+      .filter(r=>r&&(r.sourcePolicyId||/premium/i.test(String(r.name||r.note||"")))&&String(r.date)>=realToday)
+      .map(r=>({...r,due:r.date,daysLeft:dateDiff(r.date,realToday)}))
       .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
-      .slice(0,8),[data,reminderRange.start,reminderRange.end]);
+      .slice(0,8);
+  },[data,reminderRange.start,reminderRange.end]);
   const trendData=useMemo(()=>{
     const out=[];
     if(period.kind==="year"){
