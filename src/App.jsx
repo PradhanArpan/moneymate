@@ -800,6 +800,107 @@ function guessPdfPasswordFromName(name=""){
   if(/^[A-Za-z0-9@#\-_.]{4,24}$/.test(last))return last;
   return "";
 }
+
+const normPolicyLine=s=>String(s||"").replace(/\u00a0/g," ").replace(/[₹]/g," Rs. ").replace(/\s+/g," ").trim();
+function parsePolicyDate(s){
+  const raw=String(s||"");
+  const iso=raw.match(/\b(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\b/);
+  if(iso)return `${iso[1]}-${String(iso[2]).padStart(2,"0")}-${String(iso[3]).padStart(2,"0")}`;
+  return parseLooseStatementDate(raw)||"";
+}
+function policyLineValue(lines=[],labelRe,{next=2}={}){
+  const clean=lines.map(normPolicyLine).filter(Boolean);
+  for(let i=0;i<clean.length;i++){
+    const line=clean[i];
+    if(!labelRe.test(line))continue;
+    let val=line.replace(labelRe,"").replace(/^[\s:;\-–—=]+/,"").trim();
+    if(!val||val.length<2||/^(no|number|date|amount|name)$/i.test(val)){
+      const bits=[];
+      for(let j=1;j<=next&&i+j<clean.length;j++){
+        const n=clean[i+j];
+        if(!n||/^(policy|plan|premium|sum assured|nominee|branch|bank|date|status)\b/i.test(n))break;
+        bits.push(n);
+      }
+      if(bits.length)val=bits.join(" ").trim();
+    }
+    return val;
+  }
+  return "";
+}
+function policyMoneyValue(lines,labelRe,{largest=false}={}){
+  const val=policyLineValue(lines,labelRe,{next:3});
+  const toks=moneyTokens(val).filter(v=>v>0);
+  if(!toks.length)return "";
+  const n=largest?Math.max(...toks):toks[0];
+  return String(Math.round(n));
+}
+function policyDateValue(lines,labelRe){
+  const val=policyLineValue(lines,labelRe,{next:3});
+  return parsePolicyDate(val)||"";
+}
+function policyTermValue(lines,labelRe){
+  const val=policyLineValue(lines,labelRe,{next:2});
+  const m=String(val||"").match(/\b(\d{1,2})\s*(?:years?|yrs?|yr|y)\b/i)||String(val||"").match(/\b(\d{1,2})\b/);
+  return m?m[1]:"";
+}
+function policyFrequencyValue(lines=[]){
+  const v=policyLineValue(lines,/\b(?:premium\s*)?(?:payment\s*)?(?:mode|frequency)\b/i,{next:2});
+  const all=[v,lines.join(" ")].join(" ");
+  if(/half\s*year|semi\s*annual|half-year/i.test(all))return "halfyearly";
+  if(/annual|yearly|year\b/i.test(all))return "yearly";
+  if(/monthly|month\b/i.test(all))return "monthly";
+  if(/single|one\s*time|once/i.test(all))return "once";
+  if(/quarterly/i.test(all))return "monthly";
+  return "monthly";
+}
+function inferInsurerName(text="",fileName=""){
+  const all=`${text} ${fileName}`;
+  if(/star\s*health/i.test(all))return "Star Health";
+  if(/hdfc\s*ergo/i.test(all))return "HDFC Ergo";
+  if(/hdfc\s*life/i.test(all))return "HDFC Life";
+  if(/icici\s*prudential/i.test(all))return "ICICI Prudential";
+  if(/sbi\s*life/i.test(all))return "SBI Life";
+  if(/max\s*life/i.test(all))return "Max Life";
+  if(/tata\s*aia/i.test(all))return "Tata AIA";
+  if(/bajaj\s*allianz/i.test(all))return "Bajaj Allianz";
+  if(/life\s*insurance\s*corporation|\bLIC\b/i.test(all))return "LIC";
+  return "Insurance";
+}
+function inferInsurancePolicyType(text="",fileName=""){
+  const all=`${text} ${fileName}`;
+  if(/health|medical|hospital|mediclaim|star\s*health|ergo/i.test(all))return "Health Insurance";
+  if(/\bterm\b|pure\s*protection/i.test(all))return "Term Insurance";
+  return "Life Insurance";
+}
+function parseInsurancePolicy(lines=[],fileName=""){
+  const clean=lines.map(normPolicyLine).filter(Boolean);
+  const text=clean.join("\n");
+  const flat=clean.join(" ");
+  const policyType=inferInsurancePolicyType(flat,fileName);
+  const insurer=inferInsurerName(flat,fileName);
+  const planType=policyLineValue(clean,/\b(?:plan|product|scheme)\s*(?:name|type)?\b/i,{next:2}).replace(/^(name|type)\b\s*[:\-]?/i,"").trim();
+  const policyNo=(flat.match(/\bpolicy\s*(?:no\.?|number|#)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\/\-]{4,})/i)||flat.match(/\bproposal\s*(?:no\.?|number)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9\/\-]{4,})/i)||[])[1]||"";
+  const lifeInsured=policyLineValue(clean,/\b(?:life\s*assured|insured\s*(?:person|name)?|name\s*of\s*insured|proposer\s*name)\b/i,{next:2});
+  const nomineeName=policyLineValue(clean,/\bnominee\s*(?:name)?\b/i,{next:2});
+  const premiumAmount=policyMoneyValue(clean,/\b(?:instal\w*|install\w*)?\s*premium\s*(?:amount|payable|due)?\b/i,{largest:false});
+  const sumAssured=policyMoneyValue(clean,/\b(?:basic\s*)?(?:sum\s*assured|cover(?:age)?\s*(?:amount|sum)?|sum\s*insured)\b/i,{largest:true});
+  const maturityAmount=policyMoneyValue(clean,/\b(?:maturity\s*(?:amount|sum\s*assured|benefit)|survival\s*benefit)\b/i,{largest:true});
+  const commencementDate=policyDateValue(clean,/\b(?:date\s*of\s*)?(?:commencement|risk\s*commencement|policy\s*start|start\s*date|inception\s*date)\b/i);
+  const maturityDate=policyDateValue(clean,/\b(?:date\s*of\s*)?(?:maturity|expiry|expiration|policy\s*end|end\s*date)\b/i);
+  const premiumStartDate=policyDateValue(clean,/\b(?:next\s*)?(?:premium\s*)?(?:due\s*date|renewal\s*date|payment\s*due\s*date)\b/i)||commencementDate||today();
+  const bankName=policyLineValue(clean,/\b(?:bank\s*name|banker)\b/i,{next:2});
+  const bankBranch=policyLineValue(clean,/\b(?:branch\s*name|bank\s*branch|branch)\b/i,{next:2});
+  const linkedBankAccountNumber=(flat.match(/\b(?:bank\s*)?(?:account|a\/c)\s*(?:no\.?|number)\s*[:#\-]?\s*([Xx*\d\- ]{4,24})/i)||[])[1]||"";
+  let name="";
+  if(insurer&&insurer!=="Insurance")name=insurer;
+  if(planType&&name&&!new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"i").test(planType))name=`${name} ${planType}`;
+  if(!name)name=planType||`${policyType} Policy`;
+  const updates={type:policyType,policyType,name:name.slice(0,70),planType:planType.slice(0,80),accountNumber:policyNo,logoKey:policyType==="Health Insurance"?(insurer==="Star Health"?"starhealth":"hdfcergo"):(/hdfc/i.test(insurer)?"hdfclifeplus":"lic"),lifeInsured,nomineeName,premiumAmount,premiumFrequency:policyFrequencyValue(clean),premiumStartDate,premiumDueDay:String((premiumStartDate.match(/-(\d{2})$/)||[])[1]||""),sumAssured,policyTerm:policyTermValue(clean,/\bpolicy\s*term\b/i),premiumPayingTerm:policyTermValue(clean,/\b(?:premium\s*paying\s*term|ppt)\b/i),commencementDate,maturityAmount,maturityDate,bankName,linkedBankAccountNumber:linkedBankAccountNumber.trim(),bankBranch};
+  if(policyNo)updates.hint=policyNo.replace(/\D/g,"").slice(-4);
+  Object.keys(updates).forEach(k=>{if(updates[k]===""||updates[k]===null||updates[k]===undefined)delete updates[k];});
+  const fields=Object.keys(updates).filter(k=>!['type','policyType','logoKey'].includes(k));
+  return {updates,fields,rawText:text};
+}
 const cleanDescForKey=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,64);
 const descTokens=s=>new Set(String(s||"").toLowerCase().replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(w=>w.length>=3&&!/^(the|and|for|from|with|bank|payment|paid|sent|recv|received|transfer|neft|upi|imps|rtgs|nach|ecs|ach|txn|ref|utr|card|debit|credit)$/.test(w)).slice(0,12));
 const descSimilarity=(a,b)=>{const A=descTokens(a),B=descTokens(b);if(!A.size||!B.size)return 0;let hit=0;A.forEach(x=>{if(B.has(x))hit++;});return hit/Math.max(A.size,B.size);};
@@ -1374,13 +1475,15 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
   const txnInputIndex=new Map((data.transactions||[]).map((t,i)=>[t.id,i]));
   const inputRank=t=>t._planned?-1:(Number.isFinite(+t.createdAt)?+t.createdAt:(txnInputIndex.has(t.id)?txnInputIndex.get(t.id):0));
   const periodList=[...realPeriodList,...plannedList].sort((a,b)=>{
+    const byDate=String(b.date||"").localeCompare(String(a.date||""));
+    if(byDate)return byDate;
     const ap=a._planned?1:0,bp=b._planned?1:0;
     if(ap!==bp)return ap-bp;
     if(!ap){
       const r=inputRank(b)-inputRank(a);
       if(r)return r;
     }
-    return String(b.date||"").localeCompare(String(a.date||""))||String(b.id||"").localeCompare(String(a.id||""));
+    return String(b.id||"").localeCompare(String(a.id||""));
   });
   const filtered=periodList.filter(t=>!search||[t.note,t.category,t.desc,t.subcategory].some(x=>String(x||"").toLowerCase().includes(search.toLowerCase())));
   const endingBal=accountFilter==="all"?savingsTxnAccounts(data).reduce((s,a)=>s+(balances?.[a.id]||0),0):(balances?.[accountFilter]||0);
@@ -2374,9 +2477,29 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   const isInsuranceType=t=>INSURANCE_ACCOUNT_TYPES.includes(t);
   const defaultLogo=presetType==="Health Insurance"?"starhealth":presetType==="Term Insurance"||presetType==="Life Insurance"||presetType==="Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
   const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[policyPdf,setPolicyPdf]=useState({file:null,pwd:"",needPwd:false,err:"",msg:"",loading:false});
   const isIns=isInsuranceType(f.type);
   const bankOpts=(data?.accounts||[]).filter(a=>isSavingsLike(a));
   const isProtection=f.type==="Term Insurance"||f.type==="Health Insurance"||f.policyType==="Term Insurance"||f.policyType==="Health Insurance";
+  const readPolicyPdf=async()=>{
+    const file=policyPdf.file;
+    if(!file){setPolicyPdf(p=>({...p,err:"Choose a policy PDF first.",msg:""}));return;}
+    setPolicyPdf(p=>({...p,loading:true,err:"",msg:""}));
+    try{
+      const lib=await loadPdf();
+      let pdf;
+      try{pdf=await lib.getDocument({data:await file.arrayBuffer(),password:policyPdf.pwd||undefined}).promise;}
+      catch(e){
+        if(e&&(e.name==="PasswordException"||/password/i.test(e.message||""))){setPolicyPdf(p=>({...p,loading:false,needPwd:true,err:p.pwd?"Wrong password — try again.":"This PDF is password-protected. Enter the PDF password and tap Read policy PDF.",msg:""}));return;}
+        throw e;
+      }
+      const lines=await extractLines(pdf);
+      const parsed=parseInsurancePolicy(lines,file.name);
+      if(!parsed.fields.length){setPolicyPdf(p=>({...p,loading:false,err:"I could read the PDF, but could not confidently identify policy fields. You can still fill the form manually.",msg:""}));return;}
+      setF(old=>({...old,...parsed.updates}));
+      setPolicyPdf(p=>({...p,loading:false,needPwd:false,err:"",msg:`Filled ${parsed.fields.length} field${parsed.fields.length===1?"":"s"}. Please review before saving.`}));
+    }catch(e){setPolicyPdf(p=>({...p,loading:false,err:e.message||"Could not read this policy PDF.",msg:""}));}
+  };
   const save=()=>{
     if(!f.name)return;
     const id=uid();
@@ -2396,6 +2519,15 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
     <L>Type</L><select style={F} value={f.type} onChange={s("type")}>{allTypes.map(t=><option key={t}>{t}</option>)}</select>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[f.type]}/>
     {isIns&&<>
+      <div style={{border:`1px solid ${C.border}`,borderRadius:16,background:C.bg,padding:12,margin:"8px 0 14px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,fontWeight:900,marginBottom:6}}><FileUp size={17}/> Auto-fill from policy PDF</div>
+        <div style={{fontSize:12,color:C.muted,marginBottom:10}}>PDF is read on this device only. Review the filled details before saving.</div>
+        <input type="file" accept="application/pdf" style={{...F,padding:8,background:C.card,marginBottom:8}} onChange={e=>{const file=e.target.files[0]||null;const g=file?guessPdfPasswordFromName(file.name):"";setPolicyPdf({file,pwd:g,needPwd:false,err:"",msg:"",loading:false});}}/>
+        {policyPdf.needPwd&&<input style={{...F,marginBottom:8}} type="password" value={policyPdf.pwd} onChange={e=>setPolicyPdf(p=>({...p,pwd:e.target.value,err:""}))} placeholder="PDF password"/>}
+        <button type="button" onClick={readPolicyPdf} disabled={policyPdf.loading} style={{...SB,marginTop:0,marginBottom:6,opacity:policyPdf.loading?0.7:1}}>{policyPdf.loading?"Reading PDF...":"Read policy PDF"}</button>
+        {policyPdf.err&&<div style={{fontSize:12,color:C.expense,fontWeight:800}}>{policyPdf.err}</div>}
+        {policyPdf.msg&&<div style={{fontSize:12,color:C.income,fontWeight:800}}>{policyPdf.msg}</div>}
+      </div>
       <L>Policy type</L><select style={F} value={f.policyType} onChange={s("policyType")}>{INSURANCE_TYPES.map(t=><option key={t}>{t}</option>)}</select>
       <L>Status</L><select style={F} value={f.status} onChange={s("status")}><option>Active</option><option>Paid-up</option><option>Matured</option><option>Closed</option></select>
       <L>Plan type</L><input style={F} value={f.planType} onChange={s("planType")} placeholder="Endowment / Money Back / Term / Health"/>
