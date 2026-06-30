@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v10.8 UI + PWA + Recurring Fixes
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.4 Month-End Date Fix
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -214,23 +214,25 @@ const amountKey = n=>{const v=numVal(n);const sign=v<0?"-":"";const abs=Math.abs
 const moneyNoRound = n=>{const k=amountKey(n);const sign=k.startsWith("-")?"-":"";const [w,rawF]=(sign?k.slice(1):k).split(".");const whole=new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(Number(w)||0);const frac=(rawF||"").replace(/0+$/,"");return sign+whole+(frac?`.${frac}`:"");};
 const inr    = n=>"₹"+moneyNoRound(n);
 const uid    = ()=>Math.random().toString(36).slice(2,9);
-const today  = ()=>new Date().toISOString().slice(0,10);
+const pad2   = n=>String(n).padStart(2,"0");
+const ymd    = d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const parseYmdLocal=s=>{const [y,m,d]=String(s||"").slice(0,10).split("-").map(Number);return new Date(y||new Date().getFullYear(),(m||1)-1,d||1);};
+const today  = ()=>ymd(new Date());
 const curMo  = ()=>today().slice(0,7);
-const mkKey  = d=>d.slice(0,7);
-const prevMo = mk=>{const d=new Date(mk+"-01");d.setMonth(d.getMonth()-1);return d.toISOString().slice(0,7);};
-const nextMo = mk=>{const d=new Date(mk+"-01");d.setMonth(d.getMonth()+1);return d.toISOString().slice(0,7);};
-const monthLabel=mk=>{const[y,m]=mk.split("-");return new Date(+y,+m-1,1).toLocaleString("en-IN",{month:"long",year:"numeric"});};
-const shortMo =mk=>{const[y,m]=mk.split("-");return new Date(+y,+m-1,1).toLocaleString("en-IN",{month:"short"});};
-const daysBefore=(s,n)=>{const d=new Date(s);d.setDate(d.getDate()-n);return d.toISOString().slice(0,10);};
-const prevDay = s=>{const d=new Date(s);d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);};
-const currentFY=()=>{const m=new Date().getMonth();return m>=3?new Date().getFullYear():new Date().getFullYear()-1;};
+const mkKey  = d=>String(d||"").slice(0,7);
+const prevMo = mk=>{const [y,m]=String(mk||curMo()).split("-").map(Number);const d=new Date(y,(m||1)-2,1);return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;};
+const nextMo = mk=>{const [y,m]=String(mk||curMo()).split("-").map(Number);const d=new Date(y,m||1,1);return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;};
+const monthLabel=mk=>{const[y,m]=String(mk||curMo()).split("-");return new Date(+y,+m-1,1).toLocaleString("en-IN",{month:"long",year:"numeric"});};
+const shortMo =mk=>{const[y,m]=String(mk||curMo()).split("-");return new Date(+y,+m-1,1).toLocaleString("en-IN",{month:"short"});};
+const daysBefore=(s,n)=>{const d=parseYmdLocal(s);d.setDate(d.getDate()-n);return ymd(d);};
+const prevDay = s=>daysBefore(s,1);
+const currentFY=()=>{const now=new Date(),m=now.getMonth();return m>=3?now.getFullYear():now.getFullYear()-1;};
 const fyRange =y=>({start:`${y}-04-01`,end:`${y+1}-03-31`});
-const monthsBetween=(a,b)=>{const da=new Date(a),db=new Date(b);return Math.max(0,(db.getFullYear()-da.getFullYear())*12+(db.getMonth()-da.getMonth()));};
+const monthsBetween=(a,b)=>{const da=parseYmdLocal(a),db=parseYmdLocal(b);return Math.max(0,(db.getFullYear()-da.getFullYear())*12+(db.getMonth()-da.getMonth()));};
 
-const ymd=d=>d.toISOString().slice(0,10);
-const addDays=(s,n)=>{const d=new Date(s);d.setDate(d.getDate()+n);return ymd(d);};
+const addDays=(s,n)=>{const d=parseYmdLocal(s);d.setDate(d.getDate()+n);return ymd(d);};
 const currentYear=()=>new Date().getFullYear();
-const startOfWeek=(s=today())=>{const d=new Date(s);const day=d.getDay();d.setDate(d.getDate()-((day+6)%7));return ymd(d);};
+const startOfWeek=(s=today())=>{const d=parseYmdLocal(s);const day=d.getDay();d.setDate(d.getDate()-((day+6)%7));return ymd(d);};
 const monthFromDate=s=>String(s||today()).slice(0,7);
 const yearFromDate=s=>+(String(s||today()).slice(0,4))||currentYear();
 const dateFromPeriod=p=>p?.date || (p?.kind==="month"?`${p.month||curMo()}-01`:p?.kind==="year"?`${p.year||currentYear()}-01-01`:today());
@@ -256,7 +258,7 @@ function ordinalDay(n){
 }
 function fmtShortDate(date){
   if(!date)return "—";
-  const dt=new Date(date);
+  const dt=/^\d{4}-\d{2}-\d{2}$/.test(String(date))?parseYmdLocal(date):new Date(date);
   if(Number.isNaN(dt.getTime()))return String(date);
   return dt.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
 }
@@ -264,15 +266,15 @@ function fmtDDMMYYYY(date){
   if(!date)return "—";
   const s=String(date);
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)){const[y,m,d]=s.split("-");return `${d}-${m}-${y}`;}
-  const dt=new Date(date);
+  const dt=/^\d{4}-\d{2}-\d{2}$/.test(String(date))?parseYmdLocal(date):new Date(date);
   if(Number.isNaN(dt.getTime()))return s;
   const d=String(dt.getDate()).padStart(2,"0"),m=String(dt.getMonth()+1).padStart(2,"0"),y=dt.getFullYear();
   return `${d}-${m}-${y}`;
 }
 const periodLabel=p=>{
   if(!p||p.kind==="month")return monthLabel(p?.month||curMo());
-  if(p.kind==="date"||p.kind==="today")return new Date(p.date||today()).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
-  if(p.kind==="week"){const r=periodRange(p);return `${new Date(r.start).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}–${new Date(r.end).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}`;}
+  if(p.kind==="date"||p.kind==="today")return parseYmdLocal(p.date||today()).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
+  if(p.kind==="week"){const r=periodRange(p);return `${parseYmdLocal(r.start).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}–${parseYmdLocal(r.end).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}`;}
   if(p.kind==="year")return String(p.year||currentYear());
   if(p.kind==="all")return "All time";
   if(p.kind==="custom")return `${p.start||"Start"} → ${p.end||"End"}`;
@@ -292,7 +294,7 @@ const convertPeriod=(p,kind)=>{
   return p;
 };
 const periodTxns=(txns,p)=>{const r=periodRange(p);if(!r)return txns;return txns.filter(t=>t.date>=r.start&&t.date<=r.end);};
-const dateDiff=(a,b)=>Math.round((new Date(a).getTime()-new Date(b).getTime())/86400000);
+const dateDiff=(a,b)=>Math.round((parseYmdLocal(a).getTime()-parseYmdLocal(b).getTime())/86400000);
 const recIntervalMonths=r=>r.frequency==="once"?0:({monthly:1,halfyearly:6,yearly:12}[r.frequency||"monthly"]||1);
 const dueDateForMonth=(r,mk)=>{
   const[y,m]=mk.split("-").map(Number),ld=new Date(y,m,0).getDate();
@@ -970,9 +972,9 @@ function statementFingerprint(profile={},summary={},fileName=""){
 function getStatementFps(){try{return JSON.parse(localStorage.getItem("mm:statementFingerprints")||"[]");}catch{return []}}
 function saveStatementFp(fp){if(!fp)return;const arr=[fp,...getStatementFps().filter(x=>x!==fp)].slice(0,60);localStorage.setItem("mm:statementFingerprints",JSON.stringify(arr));}
 function findTransferPair(row,targetAcc,data){
-  const amt=+row.amount||0;if(!amt)return null;const dt=new Date(row.date).getTime();
+  const amt=+row.amount||0;if(!amt)return null;const dt=parseYmdLocal(row.date).getTime();
   const opposite=row.type==="expense"?"income":row.type==="income"?"expense":"";if(!opposite)return null;
-  return (data.transactions||[]).find(t=>t.accountId!==targetAcc&&t.type===opposite&&Math.abs((+t.amount||0)-amt)<=1&&Math.abs(new Date(t.date).getTime()-dt)<=2*86400000)||null;
+  return (data.transactions||[]).find(t=>t.accountId!==targetAcc&&t.type===opposite&&Math.abs((+t.amount||0)-amt)<=1&&Math.abs(parseYmdLocal(t.date).getTime()-dt)<=2*86400000)||null;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1059,8 +1061,8 @@ function Main({data,persist,pin}){
     return()=>window.removeEventListener("popstate",onPop);
   },[]);
 
-  const addTxn  =t=>persist({...data,transactions:[...data.transactions,{...t,id:uid()}]});
-  const addTxns =ts=>persist({...data,transactions:[...data.transactions,...ts.map(t=>({...t,id:uid()}))]});
+  const addTxn  =t=>persist({...data,transactions:[...(data.transactions||[]),{...t,id:t.id||uid()}]});
+  const addTxns =ts=>persist({...data,transactions:[...(data.transactions||[]),...(ts||[]).map(t=>({...t,id:t.id||uid()}))]});
   const delTxn  =id=>persist({...data,transactions:data.transactions.filter(t=>t.id!==id)});
   const editTxn =(id,ch)=>persist({...data,transactions:data.transactions.map(t=>t.id===id?{...t,...ch}:t)});
   const addAcc  =a=>{const id=a.id||uid();const {_recurring=[],...clean}=a;persist({...data,accounts:[...data.accounts,{...clean,id}],recurring:[...data.recurring,..._recurring.map(r=>({...r,id:uid(),linkedAccountId:id}))]});};
@@ -1329,13 +1331,15 @@ function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth,profile,on
   </div>);
 }
 
+function normType(a){return String(a?.type||"").trim().toLowerCase();}
 function isSavingsLike(a){
-  const t=String(a?.type||"").toLowerCase();
-  return BANK_TYPES.includes(a?.type)||t.includes("saving")||t==="bank"||t.includes("wallet")||t==="cash";
+  const t=normType(a);
+  const raw=String(a?.type||"").trim();
+  return BANK_TYPES.includes(raw)||t.includes("saving")||t.includes("bank")||t.includes("wallet")||t==="cash"||t.includes("upi");
 }
 function isDebtLike(a){
-  const t=String(a?.type||"").toLowerCase();
-  return a?.type==="Loan"||a?.type==="Mortgage"||t==="debt"||t.includes("loan")||t.includes("mortgage");
+  const t=normType(a);
+  return t==="debt"||t.includes("loan")||t.includes("mortgage")||t.includes("borrow");
 }
 function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>isSavingsLike(a)||a.type==="Credit Card");}
 function liquidHeaderValue(data,balances={}){return liquidHeaderAccounts(data).reduce((s,a)=>s+(+balances[a.id]||0),0);}
@@ -1357,6 +1361,8 @@ function requireEntryAccount(data,tp,current){
   if(!id)alert(tp==="expense"?"Add or select a Savings / Cash / Credit Card / Debt account first.":"Add or select an account first.");
   return id;
 }
+function entryOptionsKey(opts){return (opts||[]).map(a=>a.id).join("|");}
+function firstDifferentAccount(data,fromId){return (data.accounts||[]).find(a=>a.id!==fromId&&a.type!=="Goal")?.id||"";}
 function nextTxnAccountId(data,current){const opts=txnAccountOptions(data);const i=Math.max(0,opts.findIndex(o=>o.id===current));return opts[(i+1)%opts.length]?.id||"all";}
 function txnMatchesAccount(t,id,data){if(t?._planned&&(!id||id==="all"))return true;if(!id||id==="all"){const ids=savingsTxnIds(data);return ids.has(t.accountId)||ids.has(t.toAccountId);}return t.accountId===id||t.toAccountId===id;}
 function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){const ids=savingsTxnIds(data);let v=0;if(t.type==="income"&&ids.has(t.accountId))v+=amt;if(t.type==="expense"&&ids.has(t.accountId))v-=amt;if(t.type==="transfer"){if(ids.has(t.accountId))v-=amt;if(ids.has(t.toAccountId))v+=amt;}return v;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
@@ -1390,7 +1396,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
         <MiniCatIcon name={t.category} index={0}/>
         <div style={{minWidth:0,overflow:"hidden"}}>
           <div style={{fontSize:10.8,fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.05}}>{t._planned?"Scheduled · ":""}{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div>
-          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · scheduled only · not paid":""}</div>
+          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · scheduled only · not paid":""}</div>
         </div>
         <div style={{fontSize:10.8,fontWeight:950,color:t._planned?C.muted:(isPositive?C.income:isNegative?C.expense:C.xfer),whiteSpace:"nowrap",textAlign:"right"}}>{isPositive?"+":isNegative?"−":""}{inr(t.amount)}</div>
         {t._planned&&rec?<button onClick={()=>rec.accountId&&payRecurringOccurrence?payRecurringOccurrence(rec,t.date):setModal("editrec",{rec,due:t.date})} style={TxnPaidSmall}>Paid</button>:<span/>}
@@ -1531,7 +1537,7 @@ function AccountTransactionsView({account,data,balances,netWorth,accountValue,se
       <input placeholder="Search this account" value={search} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>
       {filtered.length===0?<div style={{minHeight:300,display:"grid",placeItems:"center",textAlign:"center",color:C.muted}}><div><div style={{fontSize:48,marginBottom:10}}>🧾</div><div>No transactions for this account in<br/>{periodLabel(period)}</div></div></div>:
       <div style={{display:"grid",gap:9}}>{filtered.map(t=>{const isInc=t.type==="income",isX=t.type==="transfer";return <div key={t.id} style={TransactionRow}>
-        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{new Date(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:900,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button>
+        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:900,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button>
       </div>})}</div>}
     </div>
     <FloatingAdd onClick={()=>setModal("txn",{accountId:account.id})}/>
@@ -2051,19 +2057,30 @@ function QuickAddModal({close,data,addTxn,cat,kind="expense",expCats=EXPENSE_CAT
   const[chosenCat,setChosenCat]=useState(cat||cats[0]);
   const[subcat,setSubcat]=useState(firstSub(cat||cats[0],kind));
   const options=entryAccountOptions(data,kind);
-  const[amt,setAmt]=useState(""), [accId,setAccId]=useState(options[0]?.id||"");
-  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,kind,v));},[kind,data.accounts.length]);
+  const optsKey=entryOptionsKey(options);
+  const[amt,setAmt]=useState("");
+  const[accId,setAccId]=useState(ensureEntryAccount(data,kind,""));
+  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,kind,v));},[kind,optsKey]);
   const p=evalExpr(amt);
   const isIncome=kind==="income";
+  const save=()=>{
+    const a=evalExpr(amt);
+    if(!a||a<=0){alert("Enter a valid amount.");return;}
+    const aid=requireEntryAccount(data,kind,accId);
+    if(!aid)return;
+    addTxn({type:kind,amount:a,category:chosenCat,subcategory:subcat,accountId:aid,date:today(),note:""});
+    close();
+  };
   return(<Sheet close={close}><div style={{textAlign:"center",marginBottom:18}}><div style={{fontSize:42}}>{isIncome?"💰":CAT_EMOJI[chosenCat]||"📌"}</div><div style={{fontSize:18,fontWeight:800,marginTop:6}}>{isIncome?"Quick Income":chosenCat}</div></div>
     <L>Amount (₹)</L><input autoFocus style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)} placeholder="0"/>
     {/[+\-*/]/.test(String(amt).slice(1))&&!isNaN(p)&&<div style={{fontSize:12,color:C.brand,marginTop:-8,marginBottom:10,fontWeight:700}}>= {inr(p)}</div>}
     <L>Category</L><select style={F} value={chosenCat} onChange={e=>{setChosenCat(e.target.value);setSubcat(firstSub(e.target.value,kind));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>
     {subcatsFor(chosenCat,kind).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(chosenCat,kind).map(sc=><option key={sc}>{sc}</option>)}</select></>}
     <L>Account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{options.length===0&&<option value="">No eligible account</option>}{options.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+    {options.length===0&&<div style={{fontSize:12,color:C.expense,marginTop:-8,marginBottom:10,fontWeight:700}}>Add an eligible account first.</div>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:4}}>
       <button onClick={close} style={{padding:"12px 0",borderRadius:12,border:`1px solid ${C.border}`,background:C.bg,color:C.muted,fontWeight:800,fontSize:14,cursor:"pointer"}}>Cancel</button>
-      <button onClick={()=>{const a=evalExpr(amt);const aid=requireEntryAccount(data,kind,accId);if(!a||a<=0||!aid)return;addTxn({type:kind,amount:a,category:chosenCat,subcategory:subcat,accountId:aid,date:today(),note:""});close();}} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
+      <button onClick={save} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
     </div>
   </Sheet>);
 }
