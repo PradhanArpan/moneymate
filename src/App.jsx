@@ -70,7 +70,7 @@ const CATEGORY_ALIASES = {
   Giving:"Tithe",Charity:"Tithe",Gift:"Tithe",Gifts:"Tithe",
   Business:"Consultancy",Refund:"Reimbursement",Other:"Other",
 };
-const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings"];
+const BANK_TYPES    = ["Bank","UPI / Wallet","Cash","Savings","Savings Account","Bank Account"];
 const CC_TYPES      = ["Visa","Mastercard","Amex","RuPay","HDFC CC","SBI CC","ICICI CC","Axis CC","Other CC"];
 const LOAN_TYPES    = ["Car Loan","Home Loan","Personal Loan","Education Loan","Business Loan","Gold Loan","Other Loan"];
 const INVEST_TYPES  = ["EPF","PPF","NPS","Mutual Fund","Stocks","SGB","Gold / SGB","Bonds","FD","Other"];
@@ -1136,7 +1136,7 @@ function Main({data,persist,pin}){
 
   const expCats=[...EXPENSE_CATS,...data.customCats.expense];
   const incCats=[...INCOME_CATS,...data.customCats.income];
-  const bankAccounts=data.accounts.filter(a=>BANK_TYPES.includes(a.type)||a.type==="Savings");
+  const bankAccounts=data.accounts.filter(a=>isSavingsLike(a));
   const cashAccount=data.accounts.find(a=>a.type==="Cash");
 
   const balances=useMemo(()=>{
@@ -1329,20 +1329,34 @@ function CategoriesTab({data,expCats,setModal,netWorth,liquidNetWorth,profile,on
   </div>);
 }
 
-function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Credit Card");}
+function isSavingsLike(a){
+  const t=String(a?.type||"").toLowerCase();
+  return BANK_TYPES.includes(a?.type)||t.includes("saving")||t==="bank"||t.includes("wallet")||t==="cash";
+}
+function isDebtLike(a){
+  const t=String(a?.type||"").toLowerCase();
+  return a?.type==="Loan"||a?.type==="Mortgage"||t==="debt"||t.includes("loan")||t.includes("mortgage");
+}
+function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>isSavingsLike(a)||a.type==="Credit Card");}
 function liquidHeaderValue(data,balances={}){return liquidHeaderAccounts(data).reduce((s,a)=>s+(+balances[a.id]||0),0);}
 function savingsTxnAccounts(data){return liquidHeaderAccounts(data);}
 function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id));}
 function txnAccountOptions(data){return [{id:"all",name:"Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
 function txnAccountLabel(data,id){if(!id||id==="all")return "Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
-function expenseDebitAccounts(data){return (data.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Loan"||a.type==="Credit Card");}
-function incomeCreditAccounts(data){return (data.accounts||[]).filter(a=>a.type!=="Loan"&&a.type!=="Credit Card"&&a.type!=="Goal");}
+function expenseDebitAccounts(data){return (data.accounts||[]).filter(a=>isSavingsLike(a)||isDebtLike(a)||a.type==="Credit Card");}
+function incomeCreditAccounts(data){return (data.accounts||[]).filter(a=>!isDebtLike(a)&&a.type!=="Credit Card"&&a.type!=="Goal");}
+function transferAccounts(data){return (data.accounts||[]).filter(a=>a.type!=="Goal");}
 function entryAccountOptions(data,tp){
   if(tp==="expense")return expenseDebitAccounts(data);
   if(tp==="income")return incomeCreditAccounts(data);
-  return (data.accounts||[]).filter(a=>a.type!=="Goal");
+  return transferAccounts(data);
 }
 function ensureEntryAccount(data,tp,current){const opts=entryAccountOptions(data,tp);return opts.some(a=>a.id===current)?current:(opts[0]?.id||"");}
+function requireEntryAccount(data,tp,current){
+  const id=ensureEntryAccount(data,tp,current);
+  if(!id)alert(tp==="expense"?"Add or select a Savings / Cash / Credit Card / Debt account first.":"Add or select an account first.");
+  return id;
+}
 function nextTxnAccountId(data,current){const opts=txnAccountOptions(data);const i=Math.max(0,opts.findIndex(o=>o.id===current));return opts[(i+1)%opts.length]?.id||"all";}
 function txnMatchesAccount(t,id,data){if(t?._planned&&(!id||id==="all"))return true;if(!id||id==="all"){const ids=savingsTxnIds(data);return ids.has(t.accountId)||ids.has(t.toAccountId);}return t.accountId===id||t.toAccountId===id;}
 function txnBalanceEffect(t,id,data){const amt=+t.amount||0;if(!id||id==="all"){const ids=savingsTxnIds(data);let v=0;if(t.type==="income"&&ids.has(t.accountId))v+=amt;if(t.type==="expense"&&ids.has(t.accountId))v-=amt;if(t.type==="transfer"){if(ids.has(t.accountId))v-=amt;if(ids.has(t.toAccountId))v+=amt;}return v;}if(t.type==="income"&&t.accountId===id)return amt;if(t.type==="expense"&&t.accountId===id)return -amt;if(t.type==="transfer"){let v=0;if(t.accountId===id)v-=amt;if(t.toAccountId===id)v+=amt;return v;}return 0;}
@@ -1400,7 +1414,7 @@ function AccountsTab({data,balances,netWorth,profile,onProfileClick,delAcc,delGo
   const assetValue=data.accounts.reduce((s,a)=>s+assetAccountValue(a,balances[a.id]||0),0);
   const debtValue=data.accounts.reduce((s,a)=>s+debtAccountValue(a,balances[a.id]||0),0);
   const financeSections=[
-    {title:"Savings Account",rows:sortSectionRows("Savings Account",data.accounts.filter(a=>BANK_TYPES.includes(a.type))).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
+    {title:"Savings Account",rows:sortSectionRows("Savings Account",data.accounts.filter(a=>isSavingsLike(a))).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
     {title:"Credit Cards",rows:sortSectionRows("Credit Cards",data.accounts.filter(a=>a.type==="Credit Card")).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
     {title:"Debt",rows:sortSectionRows("Debt",data.accounts.filter(a=>a.type==="Loan")).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
     {title:"Investment",rows:sortSectionRows("Investment",data.accounts.filter(a=>INVEST_TYPES.includes(a.type))).map(a=>({account:a,value:netWorthAccountValue(a,balances[a.id]||0)}))},
@@ -1445,7 +1459,7 @@ function AccountsTab({data,balances,netWorth,profile,onProfileClick,delAcc,delGo
         <>
           <div style={{fontSize:19,fontWeight:900,color:C.brand,marginBottom:12}}>Accounts</div>
           <div style={{display:"grid",gap:14}}>
-            <AccountSection title="Savings Account" rows={sortSectionRows("Savings Account",accountRows.filter(a=>!a._goal&&BANK_TYPES.includes(a.type)))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
+            <AccountSection title="Savings Account" rows={sortSectionRows("Savings Account",accountRows.filter(a=>!a._goal&&isSavingsLike(a)))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Credit Cards" rows={sortSectionRows("Credit Cards",accountRows.filter(a=>a.type==="Credit Card"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Debt" rows={sortSectionRows("Debt",accountRows.filter(a=>a.type==="Loan"))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
             <AccountSection title="Investment" rows={sortSectionRows("Investment",accountRows.filter(a=>INVEST_TYPES.includes(a.type)))} render={a=><AccountListButton key={a.id} a={a} accountValue={accountValue} accountSub={accountSub} lastTxn={lastTxnFor(a.id)} setModal={setModal} setDetail={setDetail}/>} />
@@ -2046,10 +2060,10 @@ function QuickAddModal({close,data,addTxn,cat,kind="expense",expCats=EXPENSE_CAT
     {/[+\-*/]/.test(String(amt).slice(1))&&!isNaN(p)&&<div style={{fontSize:12,color:C.brand,marginTop:-8,marginBottom:10,fontWeight:700}}>= {inr(p)}</div>}
     <L>Category</L><select style={F} value={chosenCat} onChange={e=>{setChosenCat(e.target.value);setSubcat(firstSub(e.target.value,kind));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>
     {subcatsFor(chosenCat,kind).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(chosenCat,kind).map(sc=><option key={sc}>{sc}</option>)}</select></>}
-    <L>Account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{options.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+    <L>Account</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{options.length===0&&<option value="">No eligible account</option>}{options.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:4}}>
       <button onClick={close} style={{padding:"12px 0",borderRadius:12,border:`1px solid ${C.border}`,background:C.bg,color:C.muted,fontWeight:800,fontSize:14,cursor:"pointer"}}>Cancel</button>
-      <button onClick={()=>{const a=evalExpr(amt);if(!a||a<=0||!accId)return;addTxn({type:kind,amount:a,category:chosenCat,subcategory:subcat,accountId:accId,date:today(),note:""});close();}} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
+      <button onClick={()=>{const a=evalExpr(amt);const aid=requireEntryAccount(data,kind,accId);if(!a||a<=0||!aid)return;addTxn({type:kind,amount:a,category:chosenCat,subcategory:subcat,accountId:aid,date:today(),note:""});close();}} style={{padding:"12px 0",borderRadius:12,border:"none",background:isIncome?C.income:C.expense,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>Add</button>
     </div>
   </Sheet>);
 }
@@ -2081,7 +2095,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
   const accountOpts=entryAccountOptions(data,tp);
   const[accId,setAccId]=useState(ensureEntryAccount(data,tp,preset?.accountId||""));
   const[toId,setToId]=useState(data.accounts[1]?.id||data.accounts[0]?.id||"");
-  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
   const[date,setDate]=useState(today());
   const[note,setNote]=useState("");
   const[rep,setRep]=useState(false);
@@ -2095,15 +2109,18 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
   const splitOk=isSplit&&!isNaN(mainAmt)&&mainAmt>0&&Math.abs(splitTotal-mainAmt)<0.01;
 
   const go=()=>{
-    if(!accId)return;
+    const aid=requireEntryAccount(data,tp,accId);
+    if(!aid)return;
     if(isSplit){
       if(!splitOk)return;
-      const txns=splits.filter(sp=>evalExpr(sp.amt)>0).map(sp=>({type:"expense",amount:evalExpr(sp.amt),category:sp.cat,subcategory:sp.subcat||firstSub(sp.cat,"expense"),accountId:accId,date,note,id:uid()}));
+      const txns=splits.filter(sp=>evalExpr(sp.amt)>0).map(sp=>({type:"expense",amount:evalExpr(sp.amt),category:sp.cat,subcategory:sp.subcat||firstSub(sp.cat,"expense"),accountId:aid,date,note,id:uid()}));
       addTxns(txns);
     }else{
       const a=evalExpr(amt);if(!a||a<=0)return;
-      addTxn({type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note});
-      if(rep)addRec({name:note||(tp==="transfer"?"Recurring transfer":cat),type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,day:+date.slice(8,10)||1,frequency:"monthly",startDate:date});
+      const tid=tp==="transfer"?(toId||data.accounts.find(a=>a.id!==aid&&a.type!=="Goal")?.id||""):undefined;
+      if(tp==="transfer"&&!tid){alert("Choose the To account.");return;}
+      addTxn({type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined,date,note});
+      if(rep)addRec({name:note||(tp==="transfer"?"Recurring transfer":cat),type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined,day:+date.slice(8,10)||1,frequency:"monthly",startDate:date});
     }
     close();
   };
@@ -2131,7 +2148,7 @@ function TxnModal({close,data,addTxn,addTxns,addRec,expCats,incCats,addCat,prese
       </div>
     </>}
     {!isSplit&&tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>e.target.value==="__new"?setShowNC(true):(setCat(e.target.value),setSubcat(firstSub(e.target.value,tp)),setShowNC(false))}>{cats.map(c=><option key={c}>{c}</option>)}<option value="__new">➕ New…</option></select>{subcatsFor(cat,tp).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,tp).map(sc=><option key={sc}>{sc}</option>)}</select></>}{showNC&&<div style={{display:"flex",gap:6,marginTop:-8,marginBottom:12}}><input style={{...F,marginBottom:0,flex:1}} value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Category name"/><button onClick={()=>{if(newCat.trim()){addCat(tp,newCat);setCat(newCat.trim());setSubcat("");setNewCat("");setShowNC(false);}}} style={{background:C.brand,border:"none",borderRadius:10,padding:"0 14px",color:"#fff",fontWeight:700,cursor:"pointer"}}>Add</button></div>}</>}
-    <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{accountOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+    <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{accountOpts.length===0&&<option value="">No eligible account</option>}{accountOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     {tp==="transfer"&&<><L>To</L><select style={F} value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
     <L>Date</L><input style={F} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
     <L>Note (optional)</L><input style={F} value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. groceries"/>
@@ -2144,15 +2161,15 @@ function EditTxnModal({close,txn,data,editTxn,delTxn,addRec,expCats,incCats}){
   const[tp,setTp]=useState(txn.type);const[amt,setAmt]=useState(String(txn.amount));const[cat,setCat]=useState(mainCategory(txn.category));const[subcat,setSubcat]=useState(txn.subcategory||firstSub(mainCategory(txn.category),txn.type));
   const accountOpts=entryAccountOptions(data,tp);
   const[accId,setAccId]=useState(ensureEntryAccount(data,tp,txn.accountId));const[toId,setToId]=useState(txn.toAccountId||"");
-  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
   const[date,setDate]=useState(txn.date);const[note,setNote]=useState(txn.note||"");const[mkRec,setMkRec]=useState(false);
   const cats=tp==="income"?incCats:expCats;
-  const go=()=>{const a=evalExpr(amt);if(!a||a<=0)return;editTxn(txn.id,{type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,date,note,recurring:mkRec||txn.recurring});if(mkRec)addRec({name:note||(tp==="transfer"?"Recurring transfer":cat),type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined,day:+date.slice(8,10)||1,frequency:"monthly",startDate:date});close();};
+  const go=()=>{const a=evalExpr(amt);const aid=requireEntryAccount(data,tp,accId);if(!a||a<=0||!aid)return;const tid=tp==="transfer"?(toId||data.accounts.find(a=>a.id!==aid&&a.type!=="Goal")?.id||""):undefined;if(tp==="transfer"&&!tid){alert("Choose the To account.");return;}editTxn(txn.id,{type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined,date,note,recurring:mkRec||txn.recurring});if(mkRec)addRec({name:note||(tp==="transfer"?"Recurring transfer":cat),type:tp,amount:a,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined,day:+date.slice(8,10)||1,frequency:"monthly",startDate:date});close();};
   return(<Sheet close={close} title="Edit Entry">
     <div style={{display:"flex",gap:6,marginBottom:14}}>{["expense","income","transfer"].map(t=><button key={t} onClick={()=>setTp(t)} style={{flex:1,padding:"9px 0",borderRadius:10,border:`1px solid ${tp===t?C.brand:C.border}`,background:tp===t?C.brandDim:"#fff",color:tp===t?C.brand:C.muted,fontSize:12,fontWeight:700,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}</div>
     <L>Amount (₹)</L><input style={F} inputMode="decimal" value={amt} onChange={e=>setAmt(e.target.value)}/>
     {tp!=="transfer"&&<><L>Category</L><select style={F} value={cat} onChange={e=>{setCat(e.target.value);setSubcat(firstSub(e.target.value,tp));}}>{cats.map(c=><option key={c}>{c}</option>)}</select>{subcatsFor(cat,tp).length>0&&<><L>Subcategory</L><select style={F} value={subcat} onChange={e=>setSubcat(e.target.value)}>{subcatsFor(cat,tp).map(sc=><option key={sc}>{sc}</option>)}</select></>}</>}
-    <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{accountOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
+    <L>{tp==="transfer"?"From":"Account"}</L><select style={F} value={accId} onChange={e=>setAccId(e.target.value)}>{accountOpts.length===0&&<option value="">No eligible account</option>}{accountOpts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>
     {tp==="transfer"&&<><L>To</L><select style={F} value={toId} onChange={e=>setToId(e.target.value)}>{data.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
     <L>Date</L><input style={F} type="date" value={date} onChange={e=>setDate(e.target.value)}/>
     <L>Note</L><input style={F} value={note} onChange={e=>setNote(e.target.value)}/>
@@ -2172,11 +2189,12 @@ function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrenc
   const[toId,setToId]=useState(rec.toAccountId||"");
   const[name,setName]=useState(rec.name||"Recurring transaction");
   const accountOpts=entryAccountOptions(data,tp);
-  useEffect(()=>{setAccId(v=>v&&accountOpts.some(a=>a.id===v)?v:"");},[tp,data.accounts.length]);
+  useEffect(()=>{setAccId(v=>ensureEntryAccount(data,tp,v));},[tp,data.accounts.length]);
   const cats=tp==="income"?incCats:expCats;
   const save=(scope)=>{
-    const a=evalExpr(amt);if(!a||a<=0)return;
-    const ch={name,amount:a,type:tp,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined};
+    const a=evalExpr(amt);const aid=requireEntryAccount(data,tp,accId);if(!a||a<=0||!aid)return;
+    const tid=tp==="transfer"?(toId||data.accounts.find(a=>a.id!==aid&&a.type!=="Goal")?.id||""):undefined;if(tp==="transfer"&&!tid){alert("Choose the To account.");return;}
+    const ch={name,amount:a,type:tp,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined};
     editRecOccurrence(rec,due,ch,scope);close();
   };
   const del=(scope)=>{
@@ -2184,8 +2202,9 @@ function EditRecurringModal({close,rec,due,data,expCats,incCats,skipRecOccurrenc
     else {if(window.confirm("Delete only this scheduled transaction?")){skipRecOccurrence(rec.id,due);close();}}
   };
   const paid=()=>{
-    const a=evalExpr(amt);if(!a||a<=0){alert("Enter a valid amount before marking this as paid.");return;}
-    const ch={name,amount:a,type:tp,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:accId,toAccountId:tp==="transfer"?toId:undefined};
+    const a=evalExpr(amt);const aid=requireEntryAccount(data,tp,accId);if(!a||a<=0){alert("Enter a valid amount before marking this as paid.");return;}if(!aid)return;
+    const tid=tp==="transfer"?(toId||data.accounts.find(a=>a.id!==aid&&a.type!=="Goal")?.id||""):undefined;if(tp==="transfer"&&!tid){alert("Choose the To account.");return;}
+    const ch={name,amount:a,type:tp,category:tp==="transfer"?"Transfer":cat,subcategory:tp==="transfer"?"":subcat,accountId:aid,toAccountId:tp==="transfer"?tid:undefined};
     if(payRecurringOccurrence&&payRecurringOccurrence(rec,due,ch))close();
   };
   return <Sheet close={close} title="Recurring Transaction">
@@ -2322,7 +2341,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   const defaultLogo=presetType==="Health Insurance"?"starhealth":presetType==="Term Insurance"||presetType==="Life Insurance"||presetType==="Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
   const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
   const isIns=isInsuranceType(f.type);
-  const bankOpts=(data?.accounts||[]).filter(a=>BANK_TYPES.includes(a.type)||a.type==="Savings");
+  const bankOpts=(data?.accounts||[]).filter(a=>isSavingsLike(a));
   const isProtection=f.type==="Term Insurance"||f.type==="Health Insurance"||f.policyType==="Term Insurance"||f.policyType==="Health Insurance";
   const save=()=>{
     if(!f.name)return;
@@ -2512,7 +2531,7 @@ function GoalModal({close,addGoal,bankAccounts,accounts=[]}){
   const[lt,setLt]=useState("none"), [accId,setAccId]=useState(bankAccounts[0]?.id||"");
   const[iType,setIType]=useState(INVEST_TYPES[0]), [iVal,setIVal]=useState(""), [saved,setSaved]=useState("");
   const[logoKey,setLogoKey]=useState("goal");
-  const selectable=accounts.filter(a=>BANK_TYPES.includes(a.type)||INVEST_TYPES.includes(a.type));
+  const selectable=accounts.filter(a=>isSavingsLike(a)||INVEST_TYPES.includes(a.type));
   const defaultMulti=selectable.filter(a=>["Mutual Fund","Stocks"].includes(a.type)).map(a=>a.id);
   const[multiIds,setMultiIds]=useState(defaultMulti);
   const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
@@ -2536,7 +2555,7 @@ function GoalModal({close,addGoal,bankAccounts,accounts=[]}){
 
 function EditGoalModal({close,goal,editGoal,delGoal,accounts=[],balances={}}){
   const[name,setName]=useState(goal.name), [target,setTarget]=useState(goal.target), [iVal,setIVal]=useState(goal.investmentValue||""), [targetDate,setTargetDate]=useState(goal.targetDate||""), [logoKey,setLogoKey]=useState(goal.logoKey||"goal");
-  const selectable=accounts.filter(a=>BANK_TYPES.includes(a.type)||INVEST_TYPES.includes(a.type));
+  const selectable=accounts.filter(a=>isSavingsLike(a)||INVEST_TYPES.includes(a.type));
   const[multiIds,setMultiIds]=useState(goalLinkedIds(goal));
   const toggleId=id=>setMultiIds(multiIds.includes(id)?multiIds.filter(x=>x!==id):[...multiIds,id]);
   if(goal.linkType==="investment")return(<Sheet close={close} title="Update Value"><LogoSelector value={logoKey} onChange={setLogoKey} types={["Goal"]}/><div style={{textAlign:"center",marginBottom:18}}><div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:700,color:C.gold}}>{inr(goal.investmentValue||0)}</div><div style={{fontSize:12,color:C.muted}}>{goal.investmentType}</div></div><L>New value (₹)</L><input autoFocus style={F} type="number" value={iVal} onChange={e=>setIVal(e.target.value)}/><button onClick={()=>{if(!iVal)return;editGoal(goal.id,{investmentValue:+iVal,investmentValueDate:today(),logoKey});close();}} style={SB}>Update</button>{delGoal&&<button onClick={()=>{if(window.confirm("Delete this goal?")){delGoal(goal.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete goal</button>}</Sheet>);
