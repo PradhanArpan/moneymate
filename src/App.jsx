@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.8 Reminder/Debt Sync Polish
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.9 Short Names/Reminder Polish
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1401,8 +1401,8 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
       {(backupReminder||ccReminderAlerts.length>0||premiumAlerts.length>0)&&<div style={OverviewCard}>
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
-        {ccReminderAlerts.map(cc=><div key={`${cc.id}-${cc.due}`} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>{fmtShortDate(cc.due)} · {cc.daysLeft===0?"due today":cc.daysLeft===1?"due tomorrow":cc.daysLeft>1?`in ${cc.daysLeft} days`:`${Math.abs(cc.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{cc.amount?inr(cc.amount):""}</div></div>)}
-        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||p.note||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtShortDate(p.due)} · {p.daysLeft===0?"due today":p.daysLeft===1?"due tomorrow":p.daysLeft>1?`in ${p.daysLeft} days`:`${Math.abs(p.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div></div>)}
+        {ccReminderAlerts.map(cc=><div key={`${cc.id}-${cc.due}`} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(cc.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{cc.amount?inr(cc.amount):""}</div></div>)}
+        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||p.note||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Next due {fmtShortDate(p.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div></div>)}
       </div>}
     </div>
   </div>);
@@ -1460,6 +1460,7 @@ function liquidHeaderAccounts(data){return (data.accounts||[]).filter(a=>isSavin
 function liquidHeaderValue(data,balances={}){return liquidHeaderAccounts(data).reduce((s,a)=>s+(+balances[a.id]||0),0);}
 function savingsTxnAccounts(data){return liquidHeaderAccounts(data);}
 function savingsTxnIds(data){return new Set(savingsTxnAccounts(data).map(a=>a.id));}
+function accountShortName(a){const v=String(a?.shortName||a?.name||a?.type||"—").trim();return v||"—";}
 function txnAccountOptions(data){return [{id:"all",name:"Accounts"},...savingsTxnAccounts(data).map(a=>({id:a.id,name:a.name||a.type||"Account"}))];}
 function txnAccountLabel(data,id){if(!id||id==="all")return "Accounts";return (data.accounts||[]).find(a=>a.id===id)?.name||"Selected Account";}
 function expenseDebitAccounts(data){return (data.accounts||[]).filter(a=>isSavingsLike(a)||isDebtLike(a)||a.type==="Credit Card");}
@@ -1519,7 +1520,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
-      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),toAcc=data.accounts.find(a=>a.id===t.toAccountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter,data);const isPositive=t._planned?(t.type==="income"):eff>0;const isNegative=t._planned?(t.type==="expense"):eff<0;const rec=t._planned?data.recurring.find(r=>r.id===t.recurringId):null;const dateText=parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"});const subText=isX?`${dateText} · From ${acc?.name||"—"} → To ${toAcc?.name||"—"}${t.note?` · ${t.note}`:""}`:`${dateText}${acc?` · ${acc.name}`:""}${t.note?` · ${t.note}`:""}`;return <div key={t.id} style={{...TxnMiniRow,opacity:t._planned?0.72:1,background:t._planned?"#F3F1F8":C.card,border:t._planned?`1px dashed ${C.border}`:TxnMiniRow.border}}>
+      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),toAcc=data.accounts.find(a=>a.id===t.toAccountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter,data);const isPositive=t._planned?(t.type==="income"):eff>0;const isNegative=t._planned?(t.type==="expense"):eff<0;const rec=t._planned?data.recurring.find(r=>r.id===t.recurringId):null;const dateText=parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"});const subText=isX?`${dateText} · ${accountShortName(acc)} → ${accountShortName(toAcc)}${t.note?` · ${t.note}`:""}`:`${dateText}${acc?` · ${accountShortName(acc)}`:""}${t.note?` · ${t.note}`:""}`;return <div key={t.id} style={{...TxnMiniRow,opacity:t._planned?0.72:1,background:t._planned?"#F3F1F8":C.card,border:t._planned?`1px dashed ${C.border}`:TxnMiniRow.border}}>
         <MiniCatIcon name={t.category} index={0}/>
         <div style={{minWidth:0,overflow:"hidden"}}>
           <div style={{fontSize:10.8,fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.05}}>{t._planned?"Scheduled · ":""}{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div>
@@ -1636,11 +1637,12 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
         {!isInsuranceAccount(a)&&<div style={{fontSize:13,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0,maxWidth:"42%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{inr(accountValue(a))}</div>}
       </div>
       <div style={{fontSize:11.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
-      {lastTxn&&!a._goal&&!(a.type==="Loan")&&!isInsuranceAccount(a)&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
-      {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
-      {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button></div>}
       {isInsuranceAccount(a)&&<div style={{fontSize:10.8,color:C.muted,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:800}}>Sum Assured {a.sumAssured?inr(a.sumAssured):"—"} · Maturity {a.maturityDate?fmtDDMMYYYY(a.maturityDate):"—"}</div>}
-      {isInsuranceAccount(a)&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit policy</button><span style={{fontSize:11.5,color:C.muted,fontWeight:800}}>Tap card for details</span></div>}
+      {!a._goal&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:4,minWidth:0,overflow:"hidden"}}>
+        <button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900,flexShrink:0}}>{isInsuranceAccount(a)?"Edit policy":"Edit"}</button>
+        {lastTxn&&<span style={{fontSize:10.8,fontWeight:850,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</span>}
+        {isInsuranceAccount(a)&&<span style={{fontSize:11.5,color:C.muted,fontWeight:800,whiteSpace:"nowrap",flexShrink:0}}>Tap card for details</span>}
+      </div>}
       {a.type==="Loan"&&<LoanFuelMeter loan={a} value={accountValue(a)}/>} 
       {a.type==="Credit Card"&&<CreditCardFuelMeter card={a} value={accountValue(a)}/>} 
       {a._goal&&<GoalFuelMeter goal={a}/>} 
@@ -1663,8 +1665,8 @@ function AccountTransactionsView({account,data,balances,netWorth,accountValue,se
     <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"14px 16px 86px"}}>
       <input placeholder="Search this account" value={search} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>
       {filtered.length===0?<div style={{minHeight:300,display:"grid",placeItems:"center",textAlign:"center",color:C.muted}}><div><div style={{fontSize:48,marginBottom:10}}>🧾</div><div>No transactions for this account in<br/>{periodLabel(period)}</div></div></div>:
-      <div style={{display:"grid",gap:9}}>{filtered.map(t=>{const isInc=t.type==="income",isX=t.type==="transfer";return <div key={t.id} style={TransactionRow}>
-        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted}}>{parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{t.note?` · ${t.note}`:""}</div></div><div style={{fontSize:14,fontWeight:900,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button>
+      <div style={{display:"grid",gap:9}}>{filtered.map(t=>{const isInc=t.type==="income",isX=t.type==="transfer";const acc=data.accounts.find(a=>a.id===t.accountId),toAcc=data.accounts.find(a=>a.id===t.toAccountId);const dateText=parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"});const meta=isX?`${dateText} · ${accountShortName(acc)} → ${accountShortName(toAcc)}${t.note?` · ${t.note}`:""}`:`${dateText}${t.note?` · ${t.note}`:""}`;return <div key={t.id} style={TransactionRow}>
+        <CatIcon name={t.category} index={0}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div><div style={{fontSize:12,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{meta}</div></div><div style={{fontSize:14,fontWeight:900,color:isInc?C.income:isX?C.xfer:C.expense}}>{isInc?"+":isX?"":"−"}{inr(t.amount)}</div><button onClick={()=>setModal("edittxn",{txn:t})} style={PlainSmall}>Edit</button>
       </div>})}</div>}
     </div>
     <FloatingAdd onClick={()=>setModal("txn",{accountId:account.id})}/>
@@ -1705,7 +1707,7 @@ function LoanFuelMeter({loan,value}){
 function CreditCardFuelMeter({card,value}){
   const u=creditCardUsage(card,value);
   if(!u.limit)return <FuelMeter pct={0} left="Credit limit not set" right=""/>;
-  return <CreditLimitMeter availablePct={u.availablePct} usedPct={u.usedPct} over={u.over} left={`Available ${inr(u.available)}`} right={`Limit ${inr(u.limit)}`}/>;
+  return <CreditLimitMeter availablePct={u.availablePct} usedPct={u.usedPct} over={u.over} left={`${Math.round(u.usedPct)}% Utilized`} right={`Limit ${inr(u.limit)}`}/>;
 }
 function CreditLimitMeter({availablePct=0,usedPct=0,over=false,left="",right=""}){
   const a=Math.max(0,Math.min(100,availablePct));
@@ -2497,7 +2499,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   const allTypes=[...BANK_TYPES,...INVEST_TYPES,...INSURANCE_ACCOUNT_TYPES,...LEND_TYPES];
   const isInsuranceType=t=>INSURANCE_ACCOUNT_TYPES.includes(t);
   const defaultLogo=presetType==="Health Insurance"?"starhealth":presetType==="Term Insurance"||presetType==="Life Insurance"||presetType==="Insurance"?"lic":(presetType&&String(presetType).includes("Insurance")?"lic":"auto");
-  const[f,setF]=useState({name:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",shortName:"",type:presetType||"Bank",opening:"",accountNumber:"",hint:"",logoKey:defaultLogo,status:"Active",policyType:presetType&&String(presetType).includes("Insurance")?presetType:"Life Insurance",planType:"",lifeInsured:"",nomineeName:"",policyTerm:"",premiumPayingTerm:"",commencementDate:"",premiumAmount:"",premiumFrequency:"monthly",premiumDueDay:"",premiumStartDate:today(),autoPayStatus:"Not Enabled",maturityAmount:"",maturityDate:"",nextPayoutDate:"",sumAssured:"",riderName:"",riderPremium:"",riderSumAssured:"",bankName:"",linkedBankAccountNumber:"",bankBranch:"",payFromId:"",makeRecurring:false,lendDirection:"to",personName:""});const s=k=>e=>setF({...f,[k]:e.target.value});
   const[policyPdf,setPolicyPdf]=useState({file:null,pwd:"",needPwd:false,err:"",msg:"",loading:false});
   const isIns=isInsuranceType(f.type);
   const bankOpts=(data?.accounts||[]).filter(a=>isSavingsLike(a));
@@ -2524,7 +2526,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   const save=()=>{
     if(!f.name)return;
     const id=uid();
-    const clean={id,name:f.name,type:f.type,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey};
+    const clean={id,name:f.name,shortName:f.shortName.trim(),type:f.type,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey};
     if(f.type==="Lended"){Object.assign(clean,{lendDirection:f.lendDirection,personName:f.personName||f.name});}
     if(isIns){Object.assign(clean,{status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch});}
     const rec=[];
@@ -2537,6 +2539,7 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
   };
   return(<Sheet close={close} title={title||"New Account"}>
     <L>Name</L><input style={F} value={f.name} onChange={s("name")} placeholder={isIns?"e.g. LIC Jeevan Anand / HDFC Life":"e.g. HDFC Savings"}/>
+    <L>Short name</L><input style={F} value={f.shortName} onChange={s("shortName")} placeholder="e.g. SIB / HDFC CC / LIC"/>
     <L>Type</L><select style={F} value={f.type} onChange={s("type")}>{allTypes.map(t=><option key={t}>{t}</option>)}</select>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[f.type]}/>
     {isIns&&<>
@@ -2589,23 +2592,25 @@ function AccountModal({close,addAcc,addRec,data,presetType,title}){
 }
 
 function CreditCardModal({close,addAcc}){
-  const[f,setF]=useState({name:"",ccType:CC_TYPES[0],creditLimit:"",currentOutstanding:"",dueDay:"",accountNumber:"",hint:"",logoKey:"card"});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",shortName:"",ccType:CC_TYPES[0],creditLimit:"",currentOutstanding:"",dueDay:"",accountNumber:"",hint:"",logoKey:"card"});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title="New Credit Card">
     <L>Card name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. HDFC Regalia"/>
+    <L>Short name</L><input style={F} value={f.shortName} onChange={s("shortName")} placeholder="e.g. HDFC CC"/>
     <L>Card type</L><select style={F} value={f.ccType} onChange={s("ccType")}>{CC_TYPES.map(t=><option key={t}>{t}</option>)}</select>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={["Credit Card"]}/><L>Credit limit (₹)</L><input style={F} type="number" value={f.creditLimit} onChange={s("creditLimit")} placeholder="100000"/>
     <L>Current outstanding (₹)</L><input style={F} type="number" value={f.currentOutstanding} onChange={s("currentOutstanding")} placeholder="0"/>
     <L>Payment due day (1-31)</L><input style={F} type="number" min="1" max="31" value={f.dueDay} onChange={s("dueDay")} placeholder="e.g. 15 (for 15th of each month)"/>
     <L>Card / account number</L><input style={F} value={f.accountNumber} onChange={s("accountNumber")} placeholder="Full card/account number"/>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")} placeholder="e.g. 5678"/>
-    <button onClick={()=>{if(!f.name||!f.creditLimit)return;addAcc({name:f.name,type:"Credit Card",ccType:f.ccType,creditLimit:+f.creditLimit,currentOutstanding:+f.currentOutstanding||0,dueDay:+f.dueDay||0,opening:0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey});close();}} style={SB}>Add Credit Card</button>
+    <button onClick={()=>{if(!f.name||!f.creditLimit)return;addAcc({name:f.name,shortName:f.shortName.trim(),type:"Credit Card",ccType:f.ccType,creditLimit:+f.creditLimit,currentOutstanding:+f.currentOutstanding||0,dueDay:+f.dueDay||0,opening:0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey});close();}} style={SB}>Add Credit Card</button>
   </Sheet>);
 }
 
 function EditAccModal({close,account,editAcc,delAcc}){
-  const[f,setF]=useState({type:account.type,name:account.name,opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||"",lendDirection:account.lendDirection||"to",personName:account.personName||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=INSURANCE_ACCOUNT_TYPES.includes(account.type);
+  const[f,setF]=useState({type:account.type,name:account.name,shortName:account.shortName||"",opening:account.opening||0,accountNumber:account.accountNumber||"",hint:account.hint||"",logoKey:account.logoKey||autoLogoKey(account),status:account.status||"Active",policyType:account.policyType||account.type,planType:account.planType||"",lifeInsured:account.lifeInsured||"",nomineeName:account.nomineeName||"",policyTerm:account.policyTerm||"",premiumPayingTerm:account.premiumPayingTerm||"",commencementDate:account.commencementDate||"",premiumAmount:account.premiumAmount||"",premiumFrequency:account.premiumFrequency||"monthly",premiumDueDay:account.premiumDueDay||"",premiumStartDate:account.premiumStartDate||today(),autoPayStatus:account.autoPayStatus||"Not Enabled",maturityAmount:account.maturityAmount||"",maturityDate:account.maturityDate||"",nextPayoutDate:account.nextPayoutDate||"",sumAssured:account.sumAssured||"",riderName:account.riderName||"",riderPremium:account.riderPremium||"",riderSumAssured:account.riderSumAssured||"",bankName:account.bankName||"",linkedBankAccountNumber:account.linkedBankAccountNumber||"",bankBranch:account.bankBranch||"",lendDirection:account.lendDirection||"to",personName:account.personName||""});const s=k=>e=>setF({...f,[k]:e.target.value});const isIns=INSURANCE_ACCOUNT_TYPES.includes(account.type);
   return(<Sheet close={close} title="Edit Account">
     <L>Name</L><input style={F} value={f.name} onChange={s("name")}/>
+    <L>Short name</L><input style={F} value={f.shortName} onChange={s("shortName")} placeholder="e.g. SIB / HDFC CC / LIC"/>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={[account.type]}/><L>Opening / base balance (₹)</L><input style={F} type="number" value={f.opening} onChange={s("opening")}/>
     <p style={{fontSize:12,color:C.muted,marginTop:-8}}>Transactions are added on top of this.</p>
     {f.type==="Lended"&&<>
@@ -2639,25 +2644,27 @@ function EditAccModal({close,account,editAcc,delAcc}){
     </>}
     <L>Account number</L><input style={F} value={f.accountNumber} onChange={s("accountNumber")}/>
     <L>Last 4 digits</L><input style={F} inputMode="numeric" maxLength={4} value={f.hint} onChange={s("hint")}/>
-    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch,lendDirection:f.lendDirection,personName:f.personName});close();}} style={SB}>Save</button>
+    <button onClick={()=>{if(!f.name)return;editAcc(account.id,{name:f.name,shortName:f.shortName.trim(),opening:+f.opening||0,accountNumber:f.accountNumber.trim(),hint:f.hint.trim(),logoKey:f.logoKey,status:f.status,policyType:f.policyType,planType:f.planType,lifeInsured:f.lifeInsured,nomineeName:f.nomineeName,policyTerm:+f.policyTerm||0,premiumPayingTerm:+f.premiumPayingTerm||0,commencementDate:f.commencementDate,premiumAmount:+f.premiumAmount||0,premiumFrequency:f.premiumFrequency,premiumDueDay:+f.premiumDueDay||0,premiumStartDate:f.premiumStartDate,autoPayStatus:f.autoPayStatus,maturityAmount:+f.maturityAmount||0,maturityDate:f.maturityDate,nextPayoutDate:f.nextPayoutDate,sumAssured:+f.sumAssured||0,riderName:f.riderName,riderPremium:+f.riderPremium||0,riderSumAssured:+f.riderSumAssured||0,bankName:f.bankName,linkedBankAccountNumber:f.linkedBankAccountNumber,bankBranch:f.bankBranch,lendDirection:f.lendDirection,personName:f.personName});close();}} style={SB}>Save</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this account? Transactions linked to it will also be removed.")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete account</button>}
   </Sheet>);
 }
 
 function LoanModal({close,addAcc,presetLoanType,title}){
-  const[f,setF]=useState({name:"",loanType:presetLoanType||LOAN_TYPES[0],sanctioned:"",outstanding:"",logoKey:(presetLoanType||"").includes("Home")?"mortgage":"loan"});const s=k=>e=>setF({...f,[k]:e.target.value});
+  const[f,setF]=useState({name:"",shortName:"",loanType:presetLoanType||LOAN_TYPES[0],sanctioned:"",outstanding:"",logoKey:(presetLoanType||"").includes("Home")?"mortgage":"loan"});const s=k=>e=>setF({...f,[k]:e.target.value});
   return(<Sheet close={close} title={title||"Add Loan"}>
     <L>Loan name</L><input style={F} value={f.name} onChange={s("name")} placeholder="e.g. Home Loan"/>
+    <L>Short name</L><input style={F} value={f.shortName} onChange={s("shortName")} placeholder="e.g. Car Loan / Home Loan"/>
     <L>Type</L><select style={F} value={f.loanType} onChange={s("loanType")}>{LOAN_TYPES.map(t=><option key={t}>{t}</option>)}</select>
     <LogoSelector value={f.logoKey} onChange={v=>setF({...f,logoKey:v})} types={["Loan"]}/><L>Sanctioned amount (₹)</L><input style={F} type="number" value={f.sanctioned} onChange={s("sanctioned")} placeholder="780000"/>
     <L>Current outstanding (₹)</L><input style={F} type="number" value={f.outstanding} onChange={s("outstanding")} placeholder="0"/>
-    <button onClick={()=>{if(!f.name||!f.sanctioned)return;addAcc({name:f.name,type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctioned,outstandingAmount:+f.outstanding||0,opening:0,hint:"",logoKey:f.logoKey});close();}} style={SB}>Add</button>
+    <button onClick={()=>{if(!f.name||!f.sanctioned)return;addAcc({name:f.name,shortName:f.shortName.trim(),type:"Loan",loanType:f.loanType,sanctionedAmount:+f.sanctioned,outstandingAmount:+f.outstanding||0,opening:0,hint:"",logoKey:f.logoKey});close();}} style={SB}>Add</button>
   </Sheet>);
 }
 
 function EditLoanModal({close,account,currentValue,editLoan,delAcc}){
   const[out,setOut]=useState(currentDebtOutstanding(account,currentValue));
   const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
+  const[shortName,setShortName]=useState(account.shortName||"");
   const paid=Math.max(0,(account.sanctionedAmount||0)-out),pct=account.sanctionedAmount?Math.min(100,paid/account.sanctionedAmount*100):0;
   return(<Sheet close={close} title="Update Outstanding">
     <div style={{background:"linear-gradient(160deg,#0D1B2A,#0B3D2E)",borderRadius:14,padding:16,marginBottom:16,color:"#fff",textAlign:"center"}}>
@@ -2665,8 +2672,8 @@ function EditLoanModal({close,account,currentValue,editLoan,delAcc}){
       <div style={{height:10,background:"rgba(255,255,255,0.1)",borderRadius:5,margin:"12px 0 6px"}}><div style={{width:`${pct}%`,height:"100%",background:C.brand,borderRadius:5}}/></div>
       <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#6B9A8A"}}><span>Paid: {inr(paid)}</span><span>Total: {inr(account.sanctionedAmount||0)}</span></div>
     </div>
-    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Loan"]}/><L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
-    <button onClick={()=>{editLoan(account.id,+out,{logoKey});close();}} style={SB}>Update</button>
+    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Loan"]}/><L>Short name</L><input style={F} value={shortName} onChange={e=>setShortName(e.target.value)} placeholder="e.g. Car Loan"/><L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
+    <button onClick={()=>{editLoan(account.id,+out,{logoKey,shortName:shortName.trim()});close();}} style={SB}>Update</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this loan account?")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete loan</button>}
   </Sheet>);
 }
@@ -2674,17 +2681,18 @@ function EditLoanModal({close,account,currentValue,editLoan,delAcc}){
 function EditCCModal({close,account,currentValue,editCC,delAcc}){
   const[out,setOut]=useState(currentDebtOutstanding(account,currentValue));
   const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
+  const[shortName,setShortName]=useState(account.shortName||"");
   const[lim,setLim]=useState(account.creditLimit||0);
   const[dueDay,setDueDay]=useState(account.dueDay||"");
   return(<Sheet close={close} title="Update Card">
-    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Credit Card"]}/><L>Credit limit (₹)</L><input style={F} type="number" value={lim} onChange={e=>setLim(e.target.value)}/>
+    <LogoSelector value={logoKey} onChange={setLogoKey} types={["Credit Card"]}/><L>Short name</L><input style={F} value={shortName} onChange={e=>setShortName(e.target.value)} placeholder="e.g. HDFC CC"/><L>Credit limit (₹)</L><input style={F} type="number" value={lim} onChange={e=>setLim(e.target.value)}/>
     <L>Current outstanding (₹)</L><input autoFocus style={F} type="number" value={out} onChange={e=>setOut(e.target.value)}/>
     <L>Due day (1-31)</L><input style={F} type="number" min="1" max="31" value={dueDay} onChange={e=>setDueDay(e.target.value)} placeholder="e.g. 15"/>
     <div style={{background:C.bg,borderRadius:10,padding:12,marginBottom:12}}>
       <div style={{fontSize:12,color:C.muted,marginBottom:6}}>Available credit reduces as the card is used.</div>
-      <CreditLimitMeter {...creditCardUsage({...account,creditLimit:+lim},-(+out||0))}/>
+      {(()=>{const u=creditCardUsage({...account,creditLimit:+lim},-(+out||0));return <CreditLimitMeter {...u} left={`${Math.round(u.usedPct)}% Utilized`} right={`Limit ${inr(u.limit)}`}/>;})()}
     </div>
-    <button onClick={()=>{editCC(account.id,{currentOutstanding:+out,creditLimit:+lim,dueDay:+dueDay||0,logoKey});close();}} style={SB}>Update</button>
+    <button onClick={()=>{editCC(account.id,{currentOutstanding:+out,creditLimit:+lim,dueDay:+dueDay||0,logoKey,shortName:shortName.trim()});close();}} style={SB}>Update</button>
     {delAcc&&<button onClick={()=>{if(window.confirm("Delete this credit card account?")){delAcc(account.id);close();}}} style={{...SB,background:"#FFF1F2",color:C.expense,boxShadow:"none",marginTop:8}}>Delete credit card</button>}
   </Sheet>);
 }
