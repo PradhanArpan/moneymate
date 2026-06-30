@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.4 Month-End Date Fix
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.5 Thin Reminders + Premiums
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1217,7 +1217,7 @@ function Main({data,persist,pin}){
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    OVERVIEW TAB — 1Money-style summary
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats}){
+function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,ccDueAlerts,backupReminder,setModal,markPaid,delRec,expCats,payRecurringOccurrence}){
   const[period,setPeriod]=useState({kind:"month",month:curMo()});
   const txns=periodTxns(data.transactions,period);
   const month=period.kind==="month"?period.month:curMo();
@@ -1226,6 +1226,15 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const savings=income-expense;
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
+  const premiumAlerts=useMemo(()=>{
+    const from=today();
+    return (data.recurring||[])
+      .filter(r=>r&&!r.disabled&&(r.sourcePolicyId||/premium/i.test(String(r.name||""))))
+      .map(r=>{const due=nextRecurringDueDate(r,from,60);return due&&!recurringTxnExists(data.transactions,r,due)?{...r,due,daysLeft:dateDiff(due,from)}:null;})
+      .filter(Boolean)
+      .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
+      .slice(0,6);
+  },[data]);
   const trendData=useMemo(()=>{
     const out=[];
     if(period.kind==="year"){
@@ -1285,9 +1294,10 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
           <CatIcon name={r.name} index={i}/><div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{catLabel(r.name)}</div><div style={{fontSize:11,color:C.muted}}>{Math.round((r.value/(expense||1))*100)}% of expense</div></div><div style={{fontSize:15,fontWeight:900,color:C.expense}}>{inr(r.value)}</div>
         </div>)}
       </div>
-      {(backupReminder||ccDueAlerts.length>0)&&<div style={OverviewCard}>
-        {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:13}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={TinyPill}>Backup</button></div>}
-        {ccDueAlerts.map(cc=><div key={cc.id} style={NoticeRow}><span>💳</span><div style={{flex:1}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:13}}>{cc.daysLeft===0?"Due today":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div><button onClick={()=>setModal("paycc",{cc})} style={TinyPill}>Pay</button></div>)}
+      {(backupReminder||ccDueAlerts.length>0||premiumAlerts.length>0)&&<div style={OverviewCard}>
+        {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
+        {ccDueAlerts.map(cc=><div key={cc.id} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>{cc.daysLeft===0?"Due today":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div><button onClick={()=>setModal("paycc",{cc})} style={OverviewPill}>Pay</button></div>)}
+        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtShortDate(p.due)} · {p.daysLeft===0?"due today":p.daysLeft===1?"due tomorrow":p.daysLeft>1?`in ${p.daysLeft} days`:`${Math.abs(p.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div><button onClick={()=>p.accountId&&payRecurringOccurrence?payRecurringOccurrence(p,p.due):setModal("editrec",{rec:p,due:p.due})} style={OverviewPill}>Paid</button></div>)}
       </div>}
     </div>
   </div>);
@@ -1388,7 +1398,7 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
       {search!==""&&<input autoFocus placeholder="Search" value={search.trimStart()} onChange={e=>setSearch(e.target.value)} style={{...F,background:"#fff",marginBottom:10}}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
         <SoftBalance label="Starting balance" value={inr(startBal)}/>
-        <SoftBalance label="Ending balance" value={inr(endingBal)}/>
+        <SoftBalance label="Closing balance" value={inr(endingBal)}/>
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
@@ -1621,15 +1631,17 @@ function BudgetsTab({data,delBudget,setModal,netWorth,liquidNetWorth,profile,onP
       <BudgetBand title="Income" sub={`credited amounts ${inr(inc)}`} amount={inr(inc)} budget="from income entries" color="#D4F3EF"/>
       <div style={{padding:"16px 18px",display:"grid",gap:8}}>
         {budgetEntries.length>0&&<div style={{fontSize:14,fontWeight:900,color:C.muted,marginBottom:2}}>Budget for {monthLabel(month)}</div>}
-        {budgetEntries.map(([key,amt])=>{const p=parseBudgetKey(key);const spent=budgetSpentForKey(txns,key);const over=(+amt||0)>0&&spent>(+amt||0);const scopeText=(data.budgetOverrides||{})[month]?.[key]!==undefined?"This month only":"Repeats monthly";return <div key={key} onClick={()=>setModal("budget",{month,key,amount:amt,scope:(data.budgetOverrides||{})[month]?.[key]!==undefined?"thisMonth":"repeat"})} style={{...TransactionRow,cursor:"pointer"}}>
-          <CatIcon name={p.cat}/>
-          <div style={{flex:1,fontWeight:800,minWidth:0}}>
-            <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{budgetShortLabel(key)}</div>
-            <div style={{fontSize:11,color:over?C.expense:C.muted,fontWeight:over?900:700}}>{inr(spent)} spent</div>
-            <div style={{fontSize:10.5,color:C.muted,fontWeight:750,marginTop:2}}>{scopeText}</div>
+        {budgetEntries.map(([key,amt],i)=>{const p=parseBudgetKey(key);const spent=budgetSpentForKey(txns,key);const target=+amt||0;const pct=target>0?Math.min(100,Math.round(spent/target*100)):(spent>0?100:0);const over=target>0&&spent>target;const color=C.charts[(i+C.charts.length)%C.charts.length];const fill=over?"linear-gradient(90deg,#FFE2E8,#FFB3C1)":`linear-gradient(90deg,${color}44,${color}22)`;const scopeText=(data.budgetOverrides||{})[month]?.[key]!==undefined?"This month":"Monthly";return <div key={key} onClick={()=>setModal("budget",{month,key,amount:amt,scope:(data.budgetOverrides||{})[month]?.[key]!==undefined?"thisMonth":"repeat"})} style={{position:"relative",overflow:"hidden",borderRadius:13,border:`1px solid ${over?"rgba(233,77,106,.35)":C.border}`,background:C.card,boxShadow:"0 2px 8px rgba(32,33,44,.035)",cursor:"pointer",minHeight:48}}>
+          <div style={{position:"absolute",inset:"0 auto 0 0",width:`${pct}%`,background:fill,transition:"width .25s ease",pointerEvents:"none"}}/>
+          <div style={{position:"relative",display:"grid",gridTemplateColumns:"30px minmax(0,1fr) max-content 22px",alignItems:"center",gap:8,padding:"7px 8px"}}>
+            <MiniCatIcon name={p.cat} index={i}/>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12.5,fontWeight:900,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{budgetShortLabel(key)}</div>
+              <div style={{fontSize:10.5,color:over?C.expense:C.muted,fontWeight:over?950:750,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inr(spent)} spent · {scopeText}</div>
+            </div>
+            <div style={{textAlign:"right",whiteSpace:"nowrap"}}><div style={{fontSize:12.5,fontWeight:950,color:over?C.expense:C.ink}}>{inr(target)}</div><div style={{fontSize:9.8,fontWeight:850,color:C.muted}}>{pct}%</div></div>
+            <button onClick={(e)=>{e.stopPropagation();delBudget(key,month);}} style={{...PlainSmall,fontSize:16,lineHeight:1,padding:0}}>×</button>
           </div>
-          <div style={{fontWeight:950,color:over?C.expense:C.ink}}>{inr(amt)}</div>
-          <button onClick={(e)=>{e.stopPropagation();delBudget(key,month);}} style={PlainSmall}>×</button>
         </div>})}
       </div>
     </div>
@@ -1844,7 +1856,7 @@ function CatIcon({name,index=0}){const color=C.charts[index%C.charts.length],cat
 function MiniCatIcon({name,index=0}){const color=C.charts[index%C.charts.length],cat=mainCategory(name);return <div style={{width:25,height:25,borderRadius:"50%",background:`linear-gradient(135deg,${color}22,#FFFFFFCC)`,display:"grid",placeItems:"center",fontSize:14,flexShrink:0,border:`1px solid ${color}18`}}>{CAT_EMOJI[cat]||"📌"}</div>}
 const CenterRing={width:"clamp(140px,42vw,166px)",height:"clamp(140px,42vw,166px)",borderRadius:"50%",position:"relative",display:"grid",placeItems:"center",margin:"0 auto",background:"rgba(255,255,255,.26)",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.45),0 10px 28px rgba(32,33,44,.08)",overflow:"hidden"};
 function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:18,bottom:74,width:56,height:56,borderRadius:20,border:"none",background:"linear-gradient(135deg,#E8E2FF,#DAD2FF)",color:"#0D1B62",fontSize:35,lineHeight:1,boxShadow:"0 12px 28px rgba(108,92,231,.26)",zIndex:14,cursor:"pointer"}}>+</button>}
-function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:16,padding:"12px 8px",textAlign:"center"}}><div style={{fontSize:13,color:"#55565F"}}>{label}</div><div style={{fontSize:16,color:C.muted,marginTop:4}}>{value}</div></div>}
+function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:12,padding:"7px 8px",textAlign:"center",border:`1px solid ${C.border}`}}><div style={{fontSize:11,color:"#55565F",fontWeight:800}}>{label}</div><div style={{fontSize:13,color:C.muted,marginTop:2,fontWeight:900}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
 function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
 const EmptyState=({emoji,text})=><div style={{textAlign:"center",padding:"26px 10px",color:C.muted}}><div style={{fontSize:42,marginBottom:8}}>{emoji}</div><div style={{fontSize:13}}>{text}</div></div>;
@@ -1855,8 +1867,9 @@ const TxnEditSmall={border:"none",background:"transparent",color:C.brand,fontSiz
 const TxnPaidSmall={border:"none",background:C.softIncome,color:C.income,fontSize:10.5,fontWeight:950,cursor:"pointer",padding:"4px 6px",borderRadius:9,textAlign:"center"};
 const PlainSmall={border:"none",background:"transparent",color:C.muted,fontSize:13,fontWeight:800,cursor:"pointer"};
 const SoftBtn={flex:1,border:"none",background:C.active,borderRadius:14,padding:"11px 10px",fontSize:13,fontWeight:800,color:C.ink,cursor:"pointer"};
-const NoticeRow={display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${C.border}`};
+const NoticeRow={display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12.5};
 const TinyPill={border:"none",background:C.brand,color:"#fff",borderRadius:999,padding:"7px 12px",fontWeight:800,cursor:"pointer"};
+const OverviewPill={...TinyPill,padding:"5px 9px",fontSize:11,fontWeight:900,boxShadow:"none"};
 function PlannedLite({planned,markPaid,delRec,setModal}){if(!planned.length)return null;return <div style={OverviewCard}><div style={{fontSize:18,fontWeight:700,marginBottom:6}}>Upcoming recurring payments</div>{planned.slice(0,8).map(r=>{const future=(r.status?.diff||0)>0;return <div key={r.id} style={{...ListLine,opacity:future?0.72:1,background:future?"#F3F1F8":"transparent",borderRadius:14,padding:"8px 6px"}}><CatIcon name={r.category}/><div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:r.status.tone}}>{future?"Scheduled · ":""}{r.status.label}{!r.accountId?" · choose bank when paying":""}</div></div><div style={{fontWeight:800,color:future?C.muted:(r.type==="income"?C.income:r.type==="transfer"?C.xfer:C.expense)}}>{inr(r.amount)}</div>{r.status.key!=="paid"&&<button onClick={()=>markPaid(r)} style={{...TinyPill,opacity:r.accountId?1:.68}}>{r.accountId?"Paid":"Reminder"}</button>}<button onClick={()=>setModal?setModal("editrec",{rec:r,due:r.status?.due||nextRecurringDueDate(r)||today()}):delRec(r.id)} style={PlainSmall}>Edit</button></div>})}</div>}
 function TopSwitch({active,onClick,icon,label}){return <button onClick={onClick} style={{border:"none",background:"transparent",padding:"11px 0 8px",fontSize:15,fontWeight:active?900:750,color:active?C.brand:"#4B4B55",borderBottom:active?`4px solid ${C.brand}`:"4px solid transparent",cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{marginRight:6}}>{icon}</span>{label}</button>}
 const AccountRow={display:"flex",alignItems:"stretch",gap:8,border:"none",background:"rgba(255,255,255,.34)",padding:"8px 6px",borderRadius:18,cursor:"pointer",width:"100%",maxWidth:"100%",overflow:"hidden"};
