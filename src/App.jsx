@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────
-   MONEYMATE  ·  Smart Money Tracker  ·  v11.7 Transaction Input Order
+   MONEYMATE  ·  Smart Money Tracker  ·  v11.8 Reminder/Debt Sync Polish
    ─────────────────────────────────────────────────────────────────*/
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -1024,6 +1024,17 @@ function accountBalanceOnDate(data,accId,date,extraTxns=[]){
   const all=[...(data.transactions||[]),...(extraTxns||[])];
   return all.filter(t=>t.date&&t.date<=date).reduce((s,t)=>s+txEffectForAccount(t,accId),baseBalanceForAccount(acc));
 }
+function accountTxnDelta(data,accId){return (data.transactions||[]).reduce((s,t)=>s+txEffectForAccount(t,accId),0);}
+function debtBaseOutstandingForTargetCurrent(data,account,targetOutstanding){
+  const delta=accountTxnDelta(data,account?.id);
+  return Math.max(0,(+targetOutstanding||0)+delta);
+}
+function currentDebtOutstanding(account,currentValue){
+  if(currentValue!==undefined&&currentValue!==null&&Number.isFinite(+currentValue))return Math.max(0,Math.abs(+currentValue||0));
+  if(account?.type==="Loan")return Math.max(0,+account.outstandingAmount||0);
+  if(account?.type==="Credit Card")return Math.max(0,+account.currentOutstanding||0);
+  return 0;
+}
 function importRowsToTxns(rows=[],accId){
   return rows.filter(r=>r.include).map(r=>({id:r.key||uid(),type:r.type,amount:+r.amount||0,category:r.type==="transfer"?"Transfer":mainCategory(r.category),subcategory:r.type==="transfer"?"":(r.subcategory||firstSub(r.category,r.type)),accountId:accId,toAccountId:r.type==="transfer"?r.xferToId:undefined,date:r.date,note:r.desc,source:"statement-preview"}));
 }
@@ -1151,10 +1162,10 @@ function Main({data,persist,pin}){
   const addAcc  =a=>{const id=a.id||uid();const {_recurring=[],...clean}=a;persist({...data,accounts:[...data.accounts,{...clean,id}],recurring:[...data.recurring,..._recurring.map(r=>({...r,id:uid(),linkedAccountId:id}))]});};
   const delAcc  =id=>persist({...data,accounts:data.accounts.filter(a=>a.id!==id),transactions:data.transactions.filter(t=>t.accountId!==id&&t.toAccountId!==id)});
   const editAcc =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
-  const editLoan=(id,out,ch={})=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch,outstandingAmount:+out}:a)});
-  const editCC  =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch}:a)});
-  const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"expense",amount:+amt,category:"EMI",accountId:bankId,date:today(),note:note||"Loan payment"};const newOut=Math.max(0,(data.accounts.find(a=>a.id===loanId)?.outstandingAmount||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===loanId?{...a,outstandingAmount:newOut}:a)});};
-  const payCC=(ccId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:ccId,date:today(),note:note||"Credit card payment",category:"Transfer"};const cc=data.accounts.find(a=>a.id===ccId);const newOut=Math.max(0,(+cc?.currentOutstanding||0)-(+amt));persist({...data,transactions:[...data.transactions,txn],accounts:data.accounts.map(a=>a.id===ccId?{...a,currentOutstanding:newOut}:a)});};
+  const editLoan=(id,out,ch={})=>persist({...data,accounts:data.accounts.map(a=>a.id===id?{...a,...ch,outstandingAmount:debtBaseOutstandingForTargetCurrent(data,a,+out)}:a)});
+  const editCC  =(id,ch)=>persist({...data,accounts:data.accounts.map(a=>{if(a.id!==id)return a;const {currentOutstanding,...rest}=ch||{};return {...a,...rest,...(currentOutstanding!==undefined?{currentOutstanding:debtBaseOutstandingForTargetCurrent(data,a,+currentOutstanding)}:{})};})});
+  const payLoan =(loanId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:loanId,date:today(),note:note||"Loan payment",category:"Transfer"};persist({...data,transactions:[...data.transactions,txn]});};
+  const payCC=(ccId,bankId,amt,note)=>{const txn={id:uid(),createdAt:Date.now(),type:"transfer",amount:+amt,accountId:bankId,toAccountId:ccId,date:today(),note:note||"Credit card payment",category:"Transfer"};persist({...data,transactions:[...data.transactions,txn]});};
   const addGoal =g=>persist({...data,goals:[...data.goals,{...g,id:uid()}]});
   const delGoal =id=>persist({...data,goals:data.goals.filter(g=>g.id!==id)});
   const editGoal=(id,ch)=>persist({...data,goals:data.goals.map(g=>g.id===id?{...g,...ch}:g)});
@@ -1283,8 +1294,8 @@ function Main({data,persist,pin}){
       {modal?.type==="loan"      &&<LoanModal       close={close} addAcc={addAcc} presetLoanType={modal.presetLoanType} title={modal.title}/>} 
       {modal?.type==="policydetail"&&<PolicyDetailsModal close={close} account={modal.account} setModal={M}/>} 
       {modal?.type==="editacc"   &&<EditAccModal    close={close} account={modal.account} editAcc={editAcc} delAcc={delAcc}/>} 
-      {modal?.type==="editloan"  &&<EditLoanModal   close={close} account={modal.account} editLoan={editLoan} delAcc={delAcc}/>} 
-      {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} editCC={editCC} delAcc={delAcc}/>} 
+      {modal?.type==="editloan"  &&<EditLoanModal   close={close} account={modal.account} currentValue={balances?.[modal.account?.id]} editLoan={editLoan} delAcc={delAcc}/>} 
+      {modal?.type==="editcc"    &&<EditCCModal     close={close} account={modal.account} currentValue={balances?.[modal.account?.id]} editCC={editCC} delAcc={delAcc}/>} 
       {modal?.type==="payloan"   &&<PayLoanModal    close={close} loan={modal.loan} bankAccounts={bankAccounts} payLoan={payLoan}/>} 
       {modal?.type==="paycc"     &&<PayCCModal      close={close} cc={modal.cc} bankAccounts={bankAccounts} payCC={payCC}/>} 
       {modal?.type==="goal"      &&<GoalModal       close={close} addGoal={addGoal} bankAccounts={bankAccounts} accounts={data.accounts}/>} 
@@ -1310,15 +1321,25 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const savings=income-expense;
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
-  const premiumAlerts=useMemo(()=>{
-    const from=today();
-    return (data.recurring||[])
-      .filter(r=>r&&!r.disabled&&(r.sourcePolicyId||/premium/i.test(String(r.name||""))))
-      .map(r=>{const due=nextRecurringDueDate(r,from,60);return due&&!recurringTxnExists(data.transactions,r,due)?{...r,due,daysLeft:dateDiff(due,from)}:null;})
-      .filter(Boolean)
+  const reminderRange=periodRange(period);
+  const ccReminderAlerts=useMemo(()=>{
+    const start=reminderRange.start,end=reminderRange.end,now=today(),out=[];
+    (data.accounts||[]).filter(a=>a.type==="Credit Card"&&a.dueDay).forEach(a=>{
+      const sy=+start.slice(0,4),sm=+start.slice(5,7),ey=+end.slice(0,4),em=+end.slice(5,7);
+      for(let y=sy;y<=ey;y++){for(let m=(y===sy?sm:1);m<=(y===ey?em:12);m++){
+        const last=new Date(y,m,0).getDate();
+        const d=Math.min(+a.dueDay,last);
+        const due=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+        if(due>=start&&due<=end)out.push({...a,due,daysLeft:dateDiff(due,now),amount:currentDebtOutstanding(a,balances?.[a.id])});
+      }}
+    });
+    return out.sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name))).slice(0,8);
+  },[data,balances,reminderRange.start,reminderRange.end]);
+  const premiumAlerts=useMemo(()=>recurringOccurrencesInRange(data.recurring,reminderRange,data.transactions)
+      .filter(r=>r&&(r.sourcePolicyId||/premium/i.test(String(r.name||r.note||""))))
+      .map(r=>({...r,due:r.date,daysLeft:dateDiff(r.date,today())}))
       .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
-      .slice(0,6);
-  },[data]);
+      .slice(0,8),[data,reminderRange.start,reminderRange.end]);
   const trendData=useMemo(()=>{
     const out=[];
     if(period.kind==="year"){
@@ -1378,10 +1399,10 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
           <CatIcon name={r.name} index={i}/><div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{catLabel(r.name)}</div><div style={{fontSize:11,color:C.muted}}>{Math.round((r.value/(expense||1))*100)}% of expense</div></div><div style={{fontSize:15,fontWeight:900,color:C.expense}}>{inr(r.value)}</div>
         </div>)}
       </div>
-      {(backupReminder||ccDueAlerts.length>0||premiumAlerts.length>0)&&<div style={OverviewCard}>
+      {(backupReminder||ccReminderAlerts.length>0||premiumAlerts.length>0)&&<div style={OverviewCard}>
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
-        {ccDueAlerts.map(cc=><div key={cc.id} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>{cc.daysLeft===0?"Due today":cc.daysLeft===1?"Due tomorrow":`Due in ${cc.daysLeft} days`}</div></div><button onClick={()=>setModal("paycc",{cc})} style={OverviewPill}>Pay</button></div>)}
-        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtShortDate(p.due)} · {p.daysLeft===0?"due today":p.daysLeft===1?"due tomorrow":p.daysLeft>1?`in ${p.daysLeft} days`:`${Math.abs(p.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div><button onClick={()=>p.accountId&&payRecurringOccurrence?payRecurringOccurrence(p,p.due):setModal("editrec",{rec:p,due:p.due})} style={OverviewPill}>Paid</button></div>)}
+        {ccReminderAlerts.map(cc=><div key={`${cc.id}-${cc.due}`} style={NoticeRow}><span>💳</span><div style={{flex:1,minWidth:0}}><b>{cc.name}</b><div style={{color:C.muted,fontSize:11.5}}>{fmtShortDate(cc.due)} · {cc.daysLeft===0?"due today":cc.daysLeft===1?"due tomorrow":cc.daysLeft>1?`in ${cc.daysLeft} days`:`${Math.abs(cc.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{cc.amount?inr(cc.amount):""}</div></div>)}
+        {premiumAlerts.map(p=><div key={`${p.id}-${p.due}`} style={NoticeRow}><span>🛡️</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.name||p.note||"Premium").replace(/\s+premium$/i,"")}</b><div style={{color:C.muted,fontSize:11.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtShortDate(p.due)} · {p.daysLeft===0?"due today":p.daysLeft===1?"due tomorrow":p.daysLeft>1?`in ${p.daysLeft} days`:`${Math.abs(p.daysLeft)}d overdue`}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{inr(p.amount)}</div></div>)}
       </div>}
     </div>
   </div>);
@@ -1498,11 +1519,11 @@ function EntriesTab({data,balances,delTxn,exportCSV,expCats,setModal,netWorth,li
       </div>
       {filtered.length===0?<div style={{minHeight:380,display:"grid",placeItems:"center",textAlign:"center",color:C.ink}}>
         <div><div style={{fontSize:58,marginBottom:14}}>🧾</div><div style={{fontSize:16,fontStyle:"italic",color:"#4B4B55"}}>Here you can see the transactions for<br/>{txnAccountLabel(data,accountFilter)} · {periodLabel(period)}</div></div>
-      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter,data);const isPositive=t._planned?(t.type==="income"):eff>0;const isNegative=t._planned?(t.type==="expense"):eff<0;const rec=t._planned?data.recurring.find(r=>r.id===t.recurringId):null;return <div key={t.id} style={{...TxnMiniRow,opacity:t._planned?0.72:1,background:t._planned?"#F3F1F8":C.card,border:t._planned?`1px dashed ${C.border}`:TxnMiniRow.border}}>
+      </div>:<div style={{display:"grid",gap:5}}>{filtered.map(t=>{const acc=data.accounts.find(a=>a.id===t.accountId),toAcc=data.accounts.find(a=>a.id===t.toAccountId),isX=t.type==="transfer";const eff=txnBalanceEffect(t,accountFilter,data);const isPositive=t._planned?(t.type==="income"):eff>0;const isNegative=t._planned?(t.type==="expense"):eff<0;const rec=t._planned?data.recurring.find(r=>r.id===t.recurringId):null;const dateText=parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"});const subText=isX?`${dateText} · From ${acc?.name||"—"} → To ${toAcc?.name||"—"}${t.note?` · ${t.note}`:""}`:`${dateText}${acc?` · ${acc.name}`:""}${t.note?` · ${t.note}`:""}`;return <div key={t.id} style={{...TxnMiniRow,opacity:t._planned?0.72:1,background:t._planned?"#F3F1F8":C.card,border:t._planned?`1px dashed ${C.border}`:TxnMiniRow.border}}>
         <MiniCatIcon name={t.category} index={0}/>
         <div style={{minWidth:0,overflow:"hidden"}}>
           <div style={{fontSize:10.8,fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.05}}>{t._planned?"Scheduled · ":""}{isX?"Transfer":catLabel(t.category)}{!isX&&t.subcategory?` · ${t.subcategory}`:""}</div>
-          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{parseYmdLocal(t.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}{acc?` · ${acc.name}`:""}{t.note?` · ${t.note}`:""}{t._planned?" · scheduled only · not paid":""}</div>
+          <div style={{fontSize:8.8,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.1,marginTop:2}}>{subText}{t._planned?" · scheduled only · not paid":""}</div>
         </div>
         <div style={{fontSize:10.8,fontWeight:950,color:t._planned?C.muted:(isPositive?C.income:isNegative?C.expense:C.xfer),whiteSpace:"nowrap",textAlign:"right"}}>{isPositive?"+":isNegative?"−":""}{inr(t.amount)}</div>
         {t._planned&&rec?<button onClick={()=>rec.accountId&&payRecurringOccurrence?payRecurringOccurrence(rec,t.date):setModal("editrec",{rec,due:t.date})} style={TxnPaidSmall}>Paid</button>:<span/>}
@@ -1542,7 +1563,7 @@ function AccountsTab({data,balances,netWorth,profile,onProfileClick,delAcc,delGo
       return `${goalTypeLabel(a._goal||a)} · ${Math.round(pct)}% · ${td}`;
     }
     if(a.type==="Loan"){
-      const pct=loanPaidPct(a);
+      const pct=loanPaidPct(a,accountValue(a));
       return `${a.loanType||"Loan"} · ${Math.round(pct)}% repaid`;
     }
     if(a.type==="Credit Card"){
@@ -1617,10 +1638,10 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
       <div style={{fontSize:11.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
       {lastTxn&&!a._goal&&!(a.type==="Loan")&&!isInsuranceAccount(a)&&<div style={{fontSize:10.8,fontWeight:850,marginTop:3,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</div>}
       {canOpen&&<button onClick={openEdit} style={{...PlainSmall,marginTop:4,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button>}
-      {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button><button onClick={e=>{e.stopPropagation();setModal("paycc",{cc:a});}} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.income,fontWeight:900}}>Pay</button></div>}
+      {a.type==="Credit Card"&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit</button></div>}
       {isInsuranceAccount(a)&&<div style={{fontSize:10.8,color:C.muted,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:800}}>Sum Assured {a.sumAssured?inr(a.sumAssured):"—"} · Maturity {a.maturityDate?fmtDDMMYYYY(a.maturityDate):"—"}</div>}
       {isInsuranceAccount(a)&&<div style={{display:"flex",gap:12,marginTop:4}}><button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900}}>Edit policy</button><span style={{fontSize:11.5,color:C.muted,fontWeight:800}}>Tap card for details</span></div>}
-      {a.type==="Loan"&&<LoanFuelMeter loan={a}/>} 
+      {a.type==="Loan"&&<LoanFuelMeter loan={a} value={accountValue(a)}/>} 
       {a.type==="Credit Card"&&<CreditCardFuelMeter card={a} value={accountValue(a)}/>} 
       {a._goal&&<GoalFuelMeter goal={a}/>} 
     </div>
@@ -1655,7 +1676,7 @@ function FinanceOnlyView({assets,debts,netWorth,sections=[]}){
   </div>;
 }
 function progressPct(value,target){const t=+target||0;if(t<=0)return 0;return Math.max(0,Math.min(100,((+value||0)/t)*100));}
-function loanPaidPct(a){const sanctioned=+a.sanctionedAmount||0;const outstanding=+a.outstandingAmount||Math.abs(+a.opening||0)||0;if(sanctioned<=0)return 0;return Math.max(0,Math.min(100,((sanctioned-outstanding)/sanctioned)*100));}
+function loanPaidPct(a,currentValue){const sanctioned=+a.sanctionedAmount||0;const outstanding=currentDebtOutstanding(a,currentValue);if(sanctioned<=0)return 0;return Math.max(0,Math.min(100,((sanctioned-outstanding)/sanctioned)*100));}
 function creditCardUsage(a,currentValue){const limit=+a.creditLimit||0;const used=Math.max(0,Math.abs(+currentValue||0));const available=Math.max(0,limit-used);const usedPct=limit>0?Math.min(100,(used/limit)*100):0;const availablePct=limit>0?Math.max(0,Math.min(100,(available/limit)*100)):0;return {limit,used,available,usedPct,availablePct,over:limit>0&&used>limit};}
 function accountGradient(a,i){
   if(a._goal||a.type==="Goal")return "linear-gradient(135deg,#FFC56D,#FF8A65)";
@@ -1675,11 +1696,11 @@ function FuelMeter({pct=0,tone="goal",left="",right=""}){
     </div>
   </div>;
 }
-function LoanFuelMeter({loan}){
-  const pct=loanPaidPct(loan);
-  const outstanding=+loan.outstandingAmount||0;
+function LoanFuelMeter({loan,value}){
+  const pct=loanPaidPct(loan,value);
+  const outstanding=currentDebtOutstanding(loan,value);
   const sanctioned=+loan.sanctionedAmount||0;
-  return <FuelMeter tone="loan" pct={pct} left={`Loan amount ${inr(sanctioned)}`} right=""/>;
+  return <FuelMeter tone="loan" pct={pct} left={`Outstanding ${inr(outstanding)}`} right={`Loan amount ${inr(sanctioned)}`}/>;
 }
 function CreditCardFuelMeter({card,value}){
   const u=creditCardUsage(card,value);
@@ -1756,7 +1777,7 @@ const HeaderArrow={width:34,height:34,border:"none",background:"transparent",col
 function HeaderAvatar({profile,onClick}){
   const p={...DEFAULT_PROFILE,...(profile||{})};
   const initial=(p.name||"M").trim().charAt(0).toUpperCase()||"M";
-  return <button type="button" onClick={onClick} title="Profile" style={{width:36,height:36,borderRadius:"50%",border:"2px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:15,fontWeight:950,background:"rgba(255,255,255,.55)",overflow:"hidden",padding:0,cursor:onClick?"pointer":"default",color:C.brand}}>
+  return <button type="button" onClick={onClick} title="Profile" style={{width:46,height:46,borderRadius:"50%",border:"2.5px solid #4F505A",display:"grid",placeItems:"center",justifySelf:"start",fontSize:19,fontWeight:950,background:"rgba(255,255,255,.55)",overflow:"hidden",padding:0,cursor:onClick?"pointer":"default",color:C.brand}}>
     {p.photoDataUrl?<img src={p.photoDataUrl} alt="Profile" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:initial}
   </button>
 }
@@ -1774,7 +1795,7 @@ function MoneyHeader({netWorth=0,month,setMonth,period,setPeriod,right,periodMod
   };
   const lab=period?periodLabel(p):monthLabel(month);
   return(<div style={{position:"sticky",top:0,zIndex:15,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
-    <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
+    <div style={{display:"grid",gridTemplateColumns:"54px 1fr 54px",alignItems:"center"}}>
       <HeaderAvatar profile={profile} onClick={onAvatarClick}/><button onClick={onAccountClick||undefined} style={{textAlign:"center",border:"none",background:"transparent",cursor:onAccountClick?"pointer":"default",padding:0,minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountLabel}</div><div style={{fontSize:22,fontWeight:850,marginTop:1,lineHeight:1.05,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></button>{right||<span/>}
     </div>
     {hasPeriod&&<div style={{display:"grid",gridTemplateColumns:"38px 1fr 38px",alignItems:"center",marginTop:9}}>
@@ -1803,14 +1824,14 @@ function TransactionActionFooter({setModal,exportCSV,canExport}){return <div sty
   </div>
 </div>}
 function AccountRibbon({netWorth,onAdd}){return <div style={{position:"sticky",top:0,zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 9px",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
-  <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center"}}>
+  <div style={{display:"grid",gridTemplateColumns:"54px 1fr 54px",alignItems:"center"}}>
     <HeaderAvatar/>
     <div style={{textAlign:"center"}}><div style={{fontSize:14,fontWeight:650}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,lineHeight:1.05,marginTop:1,letterSpacing:"-.02em"}}>{inr(netWorth)}</div></div>
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
   </div>
 </div>}
 function AccountsHeader({netWorth,onAdd,section,setSection,profile,onProfileClick}){return <div style={{zIndex:16,background:"linear-gradient(180deg,#F3F0FA 0%,#ECE8F4 100%)",padding:"calc(10px + env(safe-area-inset-top)) 12px 0",borderBottom:`1px solid ${C.border}`,boxShadow:"0 2px 8px rgba(33,31,58,.04)",flexShrink:0}}>
-  <div style={{display:"grid",gridTemplateColumns:"42px 1fr 42px",alignItems:"center",paddingBottom:8}}>
+  <div style={{display:"grid",gridTemplateColumns:"54px 1fr 54px",alignItems:"center",paddingBottom:8}}>
     <HeaderAvatar profile={profile} onClick={onProfileClick}/>
     <div style={{textAlign:"center",minWidth:0}}><div style={{fontSize:14,fontWeight:650,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>All Accounts</div><div style={{fontSize:22,fontWeight:850,lineHeight:1.05,marginTop:1,letterSpacing:"-.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inr(netWorth)}</div></div>
     <button onClick={onAdd} style={{...HeaderIconBtn,justifySelf:"end"}}><Plus size={31}/></button>
@@ -2634,8 +2655,8 @@ function LoanModal({close,addAcc,presetLoanType,title}){
   </Sheet>);
 }
 
-function EditLoanModal({close,account,editLoan,delAcc}){
-  const[out,setOut]=useState(account.outstandingAmount||0);
+function EditLoanModal({close,account,currentValue,editLoan,delAcc}){
+  const[out,setOut]=useState(currentDebtOutstanding(account,currentValue));
   const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
   const paid=Math.max(0,(account.sanctionedAmount||0)-out),pct=account.sanctionedAmount?Math.min(100,paid/account.sanctionedAmount*100):0;
   return(<Sheet close={close} title="Update Outstanding">
@@ -2650,8 +2671,8 @@ function EditLoanModal({close,account,editLoan,delAcc}){
   </Sheet>);
 }
 
-function EditCCModal({close,account,editCC,delAcc}){
-  const[out,setOut]=useState(account.currentOutstanding||0);
+function EditCCModal({close,account,currentValue,editCC,delAcc}){
+  const[out,setOut]=useState(currentDebtOutstanding(account,currentValue));
   const[logoKey,setLogoKey]=useState(account.logoKey||autoLogoKey(account));
   const[lim,setLim]=useState(account.creditLimit||0);
   const[dueDay,setDueDay]=useState(account.dueDay||"");
