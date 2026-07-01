@@ -25,6 +25,13 @@ const C = {
   charts:["#42A5F5","#6C5CE7","#EC5D99","#FFB547","#5AC86F",
           "#9B6DFF","#FF6B6B","#8D6E63","#22B8A9","#9CA3AF","#78909C"],
 };
+const CompactTooltipProps = {
+  allowEscapeViewBox:{x:true,y:true},
+  wrapperStyle:{zIndex:60,pointerEvents:"none"},
+  contentStyle:{borderRadius:10,border:`1px solid ${C.border}`,fontSize:10,padding:"5px 7px",lineHeight:1.05,boxShadow:"0 8px 18px rgba(33,31,58,.14)"},
+  itemStyle:{padding:0,margin:0,lineHeight:1.05},
+  labelStyle:{marginBottom:2,fontWeight:850,color:C.ink}
+};
 
 /* ── Constants ───────────────────────────────────────────────────── */
 const EXPENSE_STRUCTURE = [
@@ -613,7 +620,7 @@ const normalize=d=>{
     return {...t,category:movedDomestic?"Home":mainCategory(t.category),subcategory:sub};
   };
   const recurring=ensureHardcodedLicRecurring(d.recurring||[],accounts).map(r=>{const base={skipDates:[],...r,lastDone:"",lastDoneDate:"",autoPostOnDue:false,manualOnly:true};return base.type==="expense"||base.type==="income"?normalizeCatSub(base):base;});
-  const cleanedTransactions=(d.transactions||[]).filter(t=>!(t.recurringId||t.recurringDate||t.source==="recurring-auto")).map(t=>t.type==="expense"||t.type==="income"?normalizeCatSub(t):t);
+  const cleanedTransactions=(d.transactions||[]).filter(t=>!(t.source==="recurring-auto"||t.autoPosted===true)).map(t=>t.type==="expense"||t.type==="income"?normalizeCatSub(t):t);
   return {
     ...EMPTY,...d,
     accounts,
@@ -1341,8 +1348,8 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
 
   const upcomingRange=useMemo(()=>({start:today(),end:addDays(today(),60)}),[]);
+  const accountsById=useMemo(()=>new Map((data.accounts||[]).map(a=>[String(a.id),a])),[data.accounts]);
   const ccReminderAlerts=useMemo(()=>{
-    const realToday=today();
     const start=upcomingRange.start,end=upcomingRange.end,out=[];
     (data.accounts||[]).filter(a=>a.type==="Credit Card"&&a.dueDay).forEach(a=>{
       const sy=+start.slice(0,4),sm=+start.slice(5,7),ey=+end.slice(0,4),em=+end.slice(5,7);
@@ -1358,19 +1365,41 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const recurringDueAlerts=useMemo(()=>recurringOccurrencesInRange(data.recurring,upcomingRange,data.transactions)
     .filter(r=>r&&String(r.date)>=today()&&r.type!=="income")
     .map(r=>{
-      const text=String(r.name||r.note||r.category||"Recurring payment");
-      const isPolicy=!!r.sourcePolicyId||/premium|insurance/i.test(text)||/insurance/i.test(String(r.subcategory||r.category||""));
-      const isLoan=/emi|loan|mortgage/i.test(text)||/emi|loan/i.test(String(r.subcategory||r.category||""));
-      return {kind:"recurring",icon:isPolicy?"🛡️":isLoan?"🏦":"🔁",name:text.replace(/\s+premium$/i,""),due:r.date,amount:+r.amount||0};
-    }),[data,upcomingRange.start,upcomingRange.end]);
+      const rec=(data.recurring||[]).find(x=>String(x.id)===String(r.recurringId))||{};
+      const linked=accountsById.get(String(rec.sourcePolicyId||rec.linkedAccountId||rec.toAccountId||r.toAccountId||""));
+      const toAcc=accountsById.get(String(r.toAccountId||rec.toAccountId||""));
+      let text=String(rec.name||r.name||r.note||r.category||"Recurring payment").trim();
+      if((!text||/^Recurring transfer$/i.test(text)||/^Transfer$/i.test(text))&&(linked||toAcc))text=accountShortName(linked||toAcc);
+      if(linked&&(/premium|insurance/i.test(text)||/^Recurring transfer$/i.test(text)))text=accountShortName(linked);
+      const isPolicy=!!(rec.sourcePolicyId||rec.linkedAccountId&&linked&&isInsuranceAccount(linked))||/premium|insurance/i.test(text)||/insurance/i.test(String(r.subcategory||r.category||""));
+      const isLoan=(toAcc?.type==="Loan")||/emi|loan|mortgage/i.test(text)||/emi|loan/i.test(String(r.subcategory||r.category||""));
+      const isCredit=(toAcc?.type==="Credit Card");
+      return {kind:"recurring",icon:isPolicy?"🛡️":isCredit?"💳":isLoan?"🏦":"🔁",name:text.replace(/\s+premium$/i,""),due:r.date,amount:+r.amount||0};
+    }),[data,accountsById,upcomingRange.start,upcomingRange.end]);
+  const futureTxnDueAlerts=useMemo(()=>(data.transactions||[])
+    .filter(t=>t&&String(t.date)>=upcomingRange.start&&String(t.date)<=upcomingRange.end&&t.type!=="income")
+    .map(t=>{
+      const acc=accountsById.get(String(t.accountId||""));
+      const toAcc=accountsById.get(String(t.toAccountId||""));
+      let name=String(t.note||"").trim();
+      if(t.type==="transfer"){
+        name=name&&!/^Recurring transfer$/i.test(name)?name:(toAcc?accountShortName(toAcc):(acc?accountShortName(acc):"Transfer"));
+      }else{
+        name=name||String(t.subcategory||t.category||"Upcoming payment");
+      }
+      const isPolicy=(toAcc&&isInsuranceAccount(toAcc))||/premium|insurance/i.test(name)||/insurance/i.test(String(t.subcategory||t.category||""));
+      const isLoan=(toAcc?.type==="Loan")||/emi|loan|mortgage/i.test(name);
+      const isCredit=(toAcc?.type==="Credit Card");
+      return {kind:"future-txn",icon:isPolicy?"🛡️":isCredit?"💳":isLoan?"🏦":"🔁",name:name.replace(/\s+premium$/i,""),due:t.date,amount:+t.amount||0};
+    }),[data.transactions,accountsById,upcomingRange.start,upcomingRange.end]);
   const upcomingDues=useMemo(()=>{
     const seen=new Set();
-    return [...ccReminderAlerts,...recurringDueAlerts]
+    return [...ccReminderAlerts,...recurringDueAlerts,...futureTxnDueAlerts]
       .filter(x=>x.due>=today())
       .sort((a,b)=>String(a.due).localeCompare(String(b.due))||String(a.name).localeCompare(String(b.name)))
-      .filter(x=>{const k=`${x.kind}|${x.name}|${x.due}|${Math.round(+x.amount||0)}`;if(seen.has(k))return false;seen.add(k);return true;})
-      .slice(0,10);
-  },[ccReminderAlerts,recurringDueAlerts]);
+      .filter(x=>{const k=`${x.name}|${x.due}|${Math.round(+x.amount||0)}`;if(seen.has(k))return false;seen.add(k);return true;})
+      .slice(0,30);
+  },[ccReminderAlerts,recurringDueAlerts,futureTxnDueAlerts]);
 
   const trendData=useMemo(()=>{
     const out=[];
@@ -1412,6 +1441,8 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const totalCardUsed=creditRows.reduce((s,r)=>s+r.used,0),totalLimit=creditRows.reduce((s,r)=>s+r.limit,0);
   const totalCardPct=totalLimit>0?Math.min(100,totalCardUsed/totalLimit*100):0;
   const totalLoanOutstanding=loanRows.reduce((s,r)=>s+r.outstanding,0);
+  const totalLoanSanctioned=loanRows.reduce((s,r)=>s+(+r.sanctioned||0),0);
+  const totalLoanPaidPct=totalLoanSanctioned>0?Math.max(0,Math.min(100,(totalLoanSanctioned-totalLoanOutstanding)/totalLoanSanctioned*100)):0;
   const netWorthTrend=useMemo(()=>{
     const out=[];const now=new Date();
     for(let i=11;i>=0;i--){
@@ -1446,7 +1477,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
             <CartesianGrid stroke={C.border} vertical={false}/>
             <XAxis dataKey="m" tick={{fontSize:10,fill:C.muted}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fontSize:9,fill:C.muted}} axisLine={false} tickLine={false} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-            <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
+            <Tooltip formatter={v=>inr(v)} {...CompactTooltipProps}/>
             <Line type="monotone" dataKey="income" name="Income" stroke={C.income} strokeWidth={2.4} dot={false}/>
             <Line type="monotone" dataKey="expense" name="Spending" stroke={C.expense} strokeWidth={2.4} dot={false}/>
             <Line type="monotone" dataKey="netCashflow" name="Net Cashflow" stroke={C.brand} strokeWidth={2.2} dot={false}/>
@@ -1457,7 +1488,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming Dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 60 days</div></div>
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
-        {upcomingDues.length===0&&!backupReminder?<EmptyState emoji="✅" text="No upcoming dues found."/>:upcomingDues.map(d=><div key={`${d.kind}-${d.name}-${d.due}`} style={NoticeRow}><span>{d.icon}</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(d.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{d.amount?inr(d.amount):""}</div></div>)}
+        {upcomingDues.length===0&&!backupReminder?<EmptyState emoji="✅" text="No upcoming dues found."/>:upcomingDues.map((d,i)=><div key={`${d.kind}-${d.name}-${d.due}-${Math.round(+d.amount||0)}-${i}`} style={NoticeRow}><span>{d.icon}</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(d.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{d.amount?inr(d.amount):""}</div></div>)}
       </div>
 
       <div style={OverviewCard}>
@@ -1481,18 +1512,18 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
         <div style={{fontSize:18,fontWeight:850,marginBottom:10}}>Debt/ Credit Utilization</div>
         {creditRows.length===0&&loanRows.length===0?<EmptyState emoji="🏦" text="No credit card or loan account added."/>:<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-            <OverviewInfoCard label="Utilization" value={totalLimit?<span style={{display:"flex",alignItems:"baseline",gap:7,minWidth:0,whiteSpace:"nowrap",overflow:"hidden"}}><span style={{fontSize:18,fontWeight:950,color:totalCardPct>70?C.expense:C.brand}}>{Math.round(totalCardPct)}%</span><span style={{fontSize:10.5,fontWeight:900,color:C.muted,overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(totalCardUsed)} / {inrRounded(totalLimit)}</span></span>:"—"} sub={totalLimit?"used / limit":"Credit limit not set"} tone={totalCardPct>70?C.expense:C.brand}/>
+            <UtilizationSummaryCard pct={totalCardPct} used={totalCardUsed} limit={totalLimit}/>
             <OverviewInfoCard label="Outstanding" value={inrRounded(totalLoanOutstanding)} sub={`${loanRows.length} loan account${loanRows.length===1?"":"s"}`} tone={totalLoanOutstanding>0?C.expense:C.income}/>
           </div>
-          {creditRows.length>0&&<div style={{marginBottom:12}}><OverviewDebtHeader label="Credit cards" amount={inr(totalCardUsed)} sub={totalLimit?`${Math.round(totalCardPct)}% utilized`:"Credit limit not set"}/><OverviewThinBar pct={totalCardPct} tone="expense"/>{creditRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.used)} right={r.limit?`${Math.round(r.pct)}% used`:"Limit not set"} pct={r.pct} tone={r.over?"warn":"expense"}/>)}</div>}
-          {loanRows.length>0&&<div><OverviewDebtHeader label="Loans" amount={inr(totalLoanOutstanding)} sub="Current outstanding"/>{loanRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} left={inr(r.outstanding)} right={r.sanctioned?`${Math.round(r.paidPct)}% repaid`:"Loan amount not set"} pct={r.outstandingPct} tone="expense"/>)}</div>}
+          {creditRows.length>0&&<div style={{marginBottom:12}}><OverviewDebtHeader label={<span>Credit cards <span style={{fontSize:10.5,color:C.muted,fontWeight:850,whiteSpace:"nowrap"}}>{totalLimit?`${Math.round(totalCardPct)}% used`:"limit not set"}</span></span>} amount={inr(totalCardUsed)} sub=""/><OverviewThinBar pct={totalCardPct} tone="expense"/>{creditRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} labelMeta={r.limit?`${Math.round(r.pct)}% used`:"Limit not set"} left={inr(r.used)} right="" pct={r.pct} tone={r.over?"warn":"expense"}/>)}</div>}
+          {loanRows.length>0&&<div><OverviewDebtHeader label={<span>Loans <span style={{fontSize:10.5,color:C.muted,fontWeight:850,whiteSpace:"nowrap"}}>{totalLoanSanctioned?`${Math.round(totalLoanPaidPct)}% repaid`:"loan amount not set"}</span></span>} amount={inr(totalLoanOutstanding)} sub="Current outstanding"/>{loanRows.slice(0,4).map(r=><OverviewProgressRow key={r.id} label={r.name} labelMeta={r.sanctioned?`${Math.round(r.paidPct)}% repaid`:"Loan amount not set"} left={inr(r.outstanding)} right="" pct={r.outstandingPct} tone="expense"/>)}</div>}
         </>}
       </div>
 
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Liquid Balance</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Bank + Cash Available</div></div>
         <div style={{fontSize:24,fontWeight:950,color:liquidBalance>=0?C.income:C.expense,marginBottom:8,textAlign:"left",alignSelf:"flex-start"}}>{inr(liquidBalance)}</div>
-        {liquidAccounts.length===0?<EmptyState emoji="💳" text="No bank, cash or wallet account added."/>:liquidAccounts.slice(0,5).map(a=><div key={a.id} style={{...ListLine,padding:"7px 0"}}><div style={{fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{accountShortName(a)}</div><div style={{fontWeight:950,color:(+balances?.[a.id]||0)>=0?C.ink:C.expense}}>{inr(+balances?.[a.id]||0)}</div></div>)}
+        {liquidAccounts.length===0?<EmptyState emoji="💳" text="No bank, cash or wallet account added."/>:liquidAccounts.slice(0,5).map(a=><div key={a.id} style={{display:"grid",gridTemplateColumns:"minmax(68px,max-content) 1fr",alignItems:"baseline",columnGap:14,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}><div style={{fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{accountShortName(a)}</div><div style={{fontWeight:950,color:(+balances?.[a.id]||0)>=0?C.ink:C.expense,textAlign:"left",whiteSpace:"nowrap"}}>{inr(+balances?.[a.id]||0)}</div></div>)}
       </div>
 
       <div style={OverviewCard}>
@@ -1503,7 +1534,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
             <CartesianGrid stroke={C.border} vertical={false}/>
             <XAxis dataKey="m" tick={{fontSize:10,fill:C.muted}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fontSize:9,fill:C.muted}} axisLine={false} tickLine={false} tickFormatter={v=>Math.abs(v)>=100000?`${Math.round(v/100000)}L`:Math.abs(v)>=1000?`${Math.round(v/1000)}k`:v}/>
-            <Tooltip formatter={v=>inr(v)} contentStyle={{borderRadius:12,border:`1px solid ${C.border}`,fontSize:12}}/>
+            <Tooltip formatter={v=>inr(v)} {...CompactTooltipProps}/>
             <Line type="monotone" dataKey="netWorth" name="Net worth" stroke={C.brand} strokeWidth={2.4} dot={false}/>
           </LineChart>
         </ResponsiveContainer>
@@ -1741,7 +1772,7 @@ function AccountListButton({a,accountValue,accountSub,lastTxn,setModal,setDetail
         {!isInsuranceAccount(a)&&<div style={{fontSize:13,fontWeight:900,color:a.type==="Loan"||a.type==="Credit Card"?C.expense:C.ink,flexShrink:0,maxWidth:"42%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{inr(accountValue(a))}</div>}
       </div>
       <div style={{fontSize:11.5,color:C.muted,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{accountSub(a)}</div>
-      {isInsuranceAccount(a)&&<div style={{fontSize:10.8,color:C.muted,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:800}}>Sum Assured {a.sumAssured?inr(a.sumAssured):"—"} · Maturity {a.maturityDate?fmtDDMMYYYY(a.maturityDate):"—"}</div>}
+      {isInsuranceAccount(a)&&<div style={{fontSize:9.4,color:C.muted,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontWeight:800,lineHeight:1.15}}>Sum Assured {a.sumAssured?inrRounded(a.sumAssured):"—"} · Maturity {a.maturityDate?fmtDDMMYYYY(a.maturityDate):"—"}</div>}
       {!a._goal&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:4,minWidth:0,overflow:"hidden"}}>
         <button onClick={openEdit} style={{...PlainSmall,padding:"0",fontSize:11.5,color:C.brand,fontWeight:900,flexShrink:0}}>{isInsuranceAccount(a)?"Edit policy":"Edit"}</button>
         {lastTxn&&<span style={{fontSize:10.8,fontWeight:850,color:lastTxn.type==="income"?C.income:lastTxn.type==="expense"?C.expense:C.xfer,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>Last Transaction - {lastTxn.type==="income"?"+":lastTxn.type==="expense"?"−":"↔"}{inr(lastTxn.amount)}</span>}
@@ -2093,10 +2124,11 @@ function FloatingAdd({onClick}){return <button onClick={onClick} style={{positio
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:12,padding:"7px 8px",textAlign:"center",border:`1px solid ${C.border}`}}><div style={{fontSize:11,color:"#55565F",fontWeight:800}}>{label}</div><div style={{fontSize:13,color:C.muted,marginTop:2,fontWeight:900}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
 function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
-function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{value}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div></div>}
+function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{value}</div>{sub&&<div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>}</div>}
+function UtilizationSummaryCard({pct=0,used=0,limit=0}){const tone=pct>70?C.expense:C.brand;return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Utilization</div>{limit?<><div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:7,minWidth:0,whiteSpace:"nowrap",overflow:"hidden"}}><span style={{fontSize:18,fontWeight:950,color:tone}}>{Math.round(pct)}%</span><span style={{fontSize:11,fontWeight:900,color:C.muted,overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(used)}</span></div><div style={{height:1,background:C.border,margin:"5px 0 4px"}}/><div style={{fontSize:11,fontWeight:900,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(limit)}</div></>:<div style={{fontSize:18,fontWeight:950,color:C.muted,marginTop:7}}>—</div>}</div>}
 function OverviewThinBar({pct=0,tone="brand"}){const p=Math.max(0,Math.min(100,pct));const color=tone==="expense"?C.expense:tone==="warn"?C.warn:C.brand;return <div style={{height:8,borderRadius:999,background:C.bg,overflow:"hidden",margin:"7px 0 8px"}}><div style={{height:"100%",width:`${p}%`,borderRadius:999,background:color}}/></div>}
-function OverviewDebtHeader({label,amount,sub}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}><div><div style={{fontSize:13,fontWeight:950,color:C.ink}}>{label}</div><div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:1}}>{sub}</div></div><div style={{fontSize:15,fontWeight:950,color:C.expense,whiteSpace:"nowrap"}}>{amount}</div></div>}
-function OverviewProgressRow({label,left,right,pct,tone="brand"}){return <div style={{marginTop:9}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5}}><span style={{fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{label}</span><span style={{fontWeight:900,color:C.muted,whiteSpace:"nowrap"}}>{left}</span></div><OverviewThinBar pct={pct} tone={tone}/><div style={{fontSize:10.5,color:C.muted,fontWeight:750,textAlign:"right",marginTop:-5}}>{right}</div></div>}
+function OverviewDebtHeader({label,amount,sub}){return <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10}}><div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:950,color:C.ink,display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>{label}</div>{sub&&<div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:1}}>{sub}</div>}</div><div style={{fontSize:15,fontWeight:950,color:C.expense,whiteSpace:"nowrap"}}>{amount}</div></div>}
+function OverviewProgressRow({label,labelMeta,left,right,pct,tone="brand"}){return <div style={{marginTop:9}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5}}><span style={{fontWeight:850,color:C.ink,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{label}{labelMeta&&<span style={{fontSize:10.5,color:C.muted,fontWeight:850,marginLeft:6}}>{labelMeta}</span>}</span><span style={{fontWeight:900,color:C.muted,whiteSpace:"nowrap"}}>{left}</span></div><OverviewThinBar pct={pct} tone={tone}/>{right&&<div style={{fontSize:10.5,color:C.muted,fontWeight:750,textAlign:"right",marginTop:-5}}>{right}</div>}</div>}
 const EmptyState=({emoji,text})=><div style={{textAlign:"center",padding:"26px 10px",color:C.muted}}><div style={{fontSize:42,marginBottom:8}}>{emoji}</div><div style={{fontSize:13}}>{text}</div></div>;
 const ListLine={display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"};
 const TransactionRow={background:C.card,borderRadius:16,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,boxShadow:"0 2px 8px rgba(32,33,44,.04)",border:`1px solid ${C.border}`};
