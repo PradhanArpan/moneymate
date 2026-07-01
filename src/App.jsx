@@ -27,8 +27,10 @@ const C = {
 };
 const CompactTooltipProps = {
   allowEscapeViewBox:{x:true,y:true},
-  wrapperStyle:{zIndex:60,pointerEvents:"none"},
-  contentStyle:{borderRadius:10,border:`1px solid ${C.border}`,fontSize:10,padding:"5px 7px",lineHeight:1.05,boxShadow:"0 8px 18px rgba(33,31,58,.14)"},
+  offset:-118,
+  position:{y:6},
+  wrapperStyle:{zIndex:80,pointerEvents:"none"},
+  contentStyle:{borderRadius:10,border:`1px solid ${C.border}`,fontSize:10,padding:"5px 7px",lineHeight:1.05,boxShadow:"0 8px 18px rgba(33,31,58,.14)",minWidth:92},
   itemStyle:{padding:0,margin:0,lineHeight:1.05},
   labelStyle:{marginBottom:2,fontWeight:850,color:C.ink}
 };
@@ -1347,7 +1349,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
   const topCats=categoryRows(txns,expCats).slice(0,5);
   const pieData=topCats.filter(r=>r.value>0).map(r=>({name:catLabel(r.name),value:r.value,raw:r.name}));
 
-  const upcomingRange=useMemo(()=>({start:today(),end:addDays(today(),60)}),[]);
+  const upcomingRange=useMemo(()=>({start:today(),end:addDays(today(),30)}),[]);
   const accountsById=useMemo(()=>new Map((data.accounts||[]).map(a=>[String(a.id),a])),[data.accounts]);
   const ccReminderAlerts=useMemo(()=>{
     const start=upcomingRange.start,end=upcomingRange.end,out=[];
@@ -1377,7 +1379,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       return {kind:"recurring",icon:isPolicy?"🛡️":isCredit?"💳":isLoan?"🏦":"🔁",name:text.replace(/\s+premium$/i,""),due:r.date,amount:+r.amount||0};
     }),[data,accountsById,upcomingRange.start,upcomingRange.end]);
   const futureTxnDueAlerts=useMemo(()=>(data.transactions||[])
-    .filter(t=>t&&String(t.date)>=upcomingRange.start&&String(t.date)<=upcomingRange.end&&t.type!=="income")
+    .filter(t=>t&&String(t.date)>today()&&String(t.date)>=upcomingRange.start&&String(t.date)<=upcomingRange.end&&t.type!=="income"&&(t.recurring||t.recurringId||t.source==="manual-recurring-paid"||t.source==="recurring-auto"||t.autoPosted===true))
     .map(t=>{
       const acc=accountsById.get(String(t.accountId||""));
       const toAcc=accountsById.get(String(t.toAccountId||""));
@@ -1486,7 +1488,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       </div>
 
       <div style={OverviewCard}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming Dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 60 days</div></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Upcoming Dues</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Next 30 days</div></div>
         {backupReminder&&<div style={NoticeRow}><span>💾</span><div style={{flex:1,minWidth:0}}><b>Backup reminder</b><div style={{color:C.muted,fontSize:11.5}}>{lastBackupLabel()}</div></div><button onClick={()=>setModal("settings")} style={OverviewPill}>Backup</button></div>}
         {upcomingDues.length===0&&!backupReminder?<EmptyState emoji="✅" text="No upcoming dues found."/>:upcomingDues.map((d,i)=><div key={`${d.kind}-${d.name}-${d.due}-${Math.round(+d.amount||0)}-${i}`} style={NoticeRow}><span>{d.icon}</span><div style={{flex:1,minWidth:0}}><b style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</b><div style={{color:C.muted,fontSize:11.5}}>Next due {fmtShortDate(d.due)}</div></div><div style={{fontSize:11.5,fontWeight:950,color:C.muted,whiteSpace:"nowrap"}}>{d.amount?inr(d.amount):""}</div></div>)}
       </div>
@@ -1523,7 +1525,7 @@ function HomeTab({data,balances,netWorth,liquidNetWorth,profile,onProfileClick,c
       <div style={OverviewCard}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:8}}><div style={{fontSize:18,fontWeight:850}}>Liquid Balance</div><div style={{fontSize:11,color:C.muted,fontWeight:800}}>Bank + Cash Available</div></div>
         <div style={{fontSize:24,fontWeight:950,color:liquidBalance>=0?C.income:C.expense,marginBottom:8,textAlign:"left",alignSelf:"flex-start"}}>{inr(liquidBalance)}</div>
-        {liquidAccounts.length===0?<EmptyState emoji="💳" text="No bank, cash or wallet account added."/>:liquidAccounts.slice(0,5).map(a=><div key={a.id} style={{display:"grid",gridTemplateColumns:"minmax(68px,max-content) 1fr",alignItems:"baseline",columnGap:14,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}><div style={{fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{accountShortName(a)}</div><div style={{fontWeight:950,color:(+balances?.[a.id]||0)>=0?C.ink:C.expense,textAlign:"left",whiteSpace:"nowrap"}}>{inr(+balances?.[a.id]||0)}</div></div>)}
+        {liquidAccounts.length===0?<EmptyState emoji="💳" text="No bank, cash or wallet account added."/>:liquidAccounts.slice(0,5).map(a=><div key={a.id} style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}><div style={{fontWeight:850,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{accountShortName(a)}</div><div style={{fontWeight:950,color:(+balances?.[a.id]||0)>=0?C.ink:C.expense,textAlign:"right",whiteSpace:"nowrap",marginLeft:"auto"}}>{inr(+balances?.[a.id]||0)}</div></div>)}
       </div>
 
       <div style={OverviewCard}>
@@ -2123,7 +2125,7 @@ const CenterRing={width:"clamp(140px,42vw,166px)",height:"clamp(140px,42vw,166px
 function FloatingAdd({onClick}){return <button onClick={onClick} style={{position:"fixed",right:18,bottom:74,width:56,height:56,borderRadius:20,border:"none",background:"linear-gradient(135deg,#E8E2FF,#DAD2FF)",color:"#0D1B62",fontSize:35,lineHeight:1,boxShadow:"0 12px 28px rgba(108,92,231,.26)",zIndex:14,cursor:"pointer"}}>+</button>}
 function SoftBalance({label,value}){return <div style={{background:C.tab,borderRadius:12,padding:"7px 8px",textAlign:"center",border:`1px solid ${C.border}`}}><div style={{fontSize:11,color:"#55565F",fontWeight:800}}>{label}</div><div style={{fontSize:13,color:C.muted,marginTop:2,fontWeight:900}}>{value}</div></div>}
 const OverviewCard={background:C.card,borderRadius:18,padding:13,marginBottom:12,boxShadow:"0 4px 16px rgba(32,33,44,.05)",border:`1px solid ${C.border}`};
-function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center"}}><div style={{fontSize:13,color:C.muted,fontWeight:700}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6}}>{value}</div></div>}
+function OverviewMetric({label,value,tone}){return <div style={{background:C.bg,borderRadius:18,padding:10,textAlign:"center",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:800,whiteSpace:"nowrap",letterSpacing:"-.2px"}}>{label}</div><div style={{fontSize:16,fontWeight:800,color:tone,marginTop:6,whiteSpace:"nowrap"}}>{value}</div></div>}
 function OverviewInfoCard({label,value,sub,tone}){return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</div><div style={{fontSize:18,fontWeight:950,color:tone||C.ink,marginTop:7,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{value}</div>{sub&&<div style={{fontSize:10.8,color:C.muted,fontWeight:750,marginTop:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>}</div>}
 function UtilizationSummaryCard({pct=0,used=0,limit=0}){const tone=pct>70?C.expense:C.brand;return <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:18,padding:13,boxShadow:"0 4px 16px rgba(32,33,44,.05)",minWidth:0}}><div style={{fontSize:12,color:C.muted,fontWeight:850,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Utilization</div>{limit?<><div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:7,minWidth:0,whiteSpace:"nowrap",overflow:"hidden"}}><span style={{fontSize:18,fontWeight:950,color:tone}}>{Math.round(pct)}%</span><span style={{fontSize:11,fontWeight:900,color:C.muted,overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(used)}</span></div><div style={{height:1,background:C.border,margin:"5px 0 4px"}}/><div style={{fontSize:11,fontWeight:900,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{inrRounded(limit)}</div></>:<div style={{fontSize:18,fontWeight:950,color:C.muted,marginTop:7}}>—</div>}</div>}
 function OverviewThinBar({pct=0,tone="brand"}){const p=Math.max(0,Math.min(100,pct));const color=tone==="expense"?C.expense:tone==="warn"?C.warn:C.brand;return <div style={{height:8,borderRadius:999,background:C.bg,overflow:"hidden",margin:"7px 0 8px"}}><div style={{height:"100%",width:`${p}%`,borderRadius:999,background:color}}/></div>}
